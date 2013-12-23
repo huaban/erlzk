@@ -76,18 +76,7 @@ pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, SessionId, Password}) ->
     <<ProtocolVersion:32, LastZxidSeen:64, Timeout:32, SessionId:64, (pack_bytes(Password))/binary>>.
 
 pack(create, {Path, Data, Acl, CreateMode}, Xid) ->
-    Flags = case CreateMode of
-        persistent -> 0;
-        p -> 0;
-        ephemeral  -> 1;
-        e -> 1;
-        persistent_sequential -> 2;
-        ps -> 2;
-        ephemeral_sequential  -> 3;
-        es -> 3;
-        _ -> 0
-    end,
-    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, Flags:32>>,
+    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
     wrap_packet(?ZK_OP_CREATE, Xid, Packet);
 
 pack(delete, {Path, Version}, Xid) ->
@@ -140,7 +129,11 @@ pack(get_children2, {Path, false}, Xid) ->
     pack(get_children2, {Path, 0}, Xid);
 pack(get_children2, {Path, Watch}, Xid) ->
     Packet = <<(pack_str(Path))/binary, Watch:8>>,
-    wrap_packet(?ZK_OP_GET_CHILDREN2, Xid, Packet).
+    wrap_packet(?ZK_OP_GET_CHILDREN2, Xid, Packet);
+
+pack(create2, {Path, Data, Acl, CreateMode}, Xid) ->
+    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
+    wrap_packet(?ZK_OP_CREATE2, Xid, Packet).
 
 unpack(Packet) ->
     <<Xid:32/signed, Zxid:64, Code:32/signed, Body/binary>> = Packet,
@@ -152,8 +145,8 @@ unpack(connect, Packet) ->
     {ProtocolVersion, TimeOut, SessionId, Password};
 
 unpack(create, Packet) ->
-    <<Path/bitstring>> = Packet,
-    binary_to_list(Path);
+    {Path, _} = unpack_str(Packet),
+    Path;
 
 unpack(exists, Packet) ->
     unpack_stat(Packet);
@@ -183,6 +176,10 @@ unpack(sync, Packet) ->
 unpack(get_children2, Packet) ->
     {Children, Left} = unpack_strs(Packet),
     {Children, unpack_stat(Left)};
+
+unpack(create2, Packet) ->
+    {Path, Left} = unpack_str(Packet),
+    {Path, unpack_stat(Left)};
 
 unpack(watched_event, Packet) ->
     <<Type:32/signed, State:32/signed, Left/binary>> = Packet,
@@ -215,6 +212,20 @@ pack_acl([], Packet, Size) ->
 pack_acl([{Perms,Scheme,Id}|Rest], Packet, Size) ->
     NewPacket = <<Packet/binary, (pack_perms(Perms)):32, (pack_str(Scheme))/binary, (pack_str(Id))/binary>>,
     pack_acl(Rest, NewPacket, Size + 1).
+
+pack_create_mode(CreateMode) ->
+    Flags = case CreateMode of
+        persistent -> 0;
+        p -> 0;
+        ephemeral  -> 1;
+        e -> 1;
+        persistent_sequential -> 2;
+        ps -> 2;
+        ephemeral_sequential  -> 3;
+        es -> 3;
+        _ -> 0
+    end,
+    <<Flags:32>>.
 
 pack_perms(Perms) ->
     pack_perms(atom_to_list(Perms), 0).

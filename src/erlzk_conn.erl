@@ -6,7 +6,8 @@
 -export([start/2, start/3, start_link/2, start_link/3, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([create/5, delete/3, exists/3, exists/4, get_data/3, get_data/4, set_data/4, get_acl/2, set_acl/4,
-         get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4]).
+         get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4,
+         create2/5]).
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}]).
 -define(ZK_CONNECT_TIMEOUT, 10000).
@@ -86,6 +87,9 @@ get_children2(Pid, Path, Watch) ->
 
 get_children2(Pid, Path, Watch, Watcher) ->
     gen_server:call(Pid, {get_children2, {Path, Watch}, Watcher}).
+
+create2(Pid, Path, Data, Acl, CreateMode) ->
+    gen_server:call(Pid, {create2, {Path, Data, Acl, CreateMode}}).
 
 %% ===================================================================
 %% gen_server Callbacks
