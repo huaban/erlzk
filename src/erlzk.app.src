@@ -1,0 +1,10 @@
+{application, erlzk, [
+    {description, "A Pure Erlang ZooKeeper Client (no C dependency)"},
+    {vsn, "0.1.0"},
+    {registered, [erlzk_sup,erlzk_conn_sup]},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {mod, {erlzk_app, []}}
+]}.
