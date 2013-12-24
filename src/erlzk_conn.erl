@@ -217,34 +217,27 @@ shuffle(L) ->
 
 connect([], _ProtocolVersion, _LastZxidSeen, _Timeout, _LastSessionId, _LastPassword) ->
     {error, no_available_server};
-connect([Server|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword) ->
-    case string:chr(Server, $:) of
-        0 ->
-            {error, wrong_server_pattern};
-        Index ->
-            Host = string:sub_string(Server, 1, Index - 1),
-            Port = list_to_integer(string:substr(Server, Index + 1), 10),
-            case gen_tcp:connect(Host, Port, ?ZK_SOCKET_OPTS, ?ZK_CONNECT_TIMEOUT) of
-                {ok, Socket} ->
-                    case gen_tcp:send(Socket, erlzk_codec:pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword})) of
-                        ok ->
-                            receive
-                                {tcp, Socket, Packet} ->
-                                    {ProtoVer, RealTimeOut, SessionId, Password} = erlzk_codec:unpack(connect, Packet),
-                                    {ok, #state{socket=Socket, host=Host, port=Port,
-                                                proto_ver=ProtoVer, timeout=RealTimeOut, session_id=SessionId, password=Password,
-                                                ping_interval=(RealTimeOut div 3)}};
-                                {tcp_closed, Socket} ->
-                                    connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword);
-                                {tcp_error, Socket, _Reason} ->
-                                    connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
-                            end;
-                        {error, _Reason} ->
+connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword) ->
+    case gen_tcp:connect(Host, Port, ?ZK_SOCKET_OPTS, ?ZK_CONNECT_TIMEOUT) of
+        {ok, Socket} ->
+            case gen_tcp:send(Socket, erlzk_codec:pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword})) of
+                ok ->
+                    receive
+                        {tcp, Socket, Packet} ->
+                            {ProtoVer, RealTimeOut, SessionId, Password} = erlzk_codec:unpack(connect, Packet),
+                            {ok, #state{socket=Socket, host=Host, port=Port,
+                                        proto_ver=ProtoVer, timeout=RealTimeOut, session_id=SessionId, password=Password,
+                                        ping_interval=(RealTimeOut div 3)}};
+                        {tcp_closed, Socket} ->
+                            connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword);
+                        {tcp_error, Socket, _Reason} ->
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
                     end;
                 {error, _Reason} ->
                     connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
-            end
+            end;
+        {error, _Reason} ->
+            connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
 find_and_erase_watchers(none, Path, Watchers) ->
