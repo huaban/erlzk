@@ -26,7 +26,7 @@
     zxid = 0,
     reqs = dict:new(),
     auths = queue:new(),
-    watchers = dict:new()
+    watchers = {dict:new(), dict:new(), dict:new()}
 }).
 
 %% ===================================================================
@@ -130,7 +130,7 @@ handle_call({Op, Args, Watcher}, From, State=#state{socket=Socket, xid=Xid, ping
         ok ->
             NewReqs = dict:store(Xid, {Op, From}, Reqs),
             Path = element(1, Args),
-            NewWatchers = dict:append({Op, Path}, {Op, Path, Watcher}, Watchers),
+            NewWatchers = append_watcher(Op, Path, Watcher, Watchers),
             {noreply, State#state{xid=Xid+1, reqs=NewReqs, watchers=NewWatchers}, PingIntv};
         {error, Reason} ->
             {reply, {error, Reason}, State#state{xid=Xid+1}, PingIntv}
@@ -240,27 +240,43 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
+append_watcher(Op, Path, Watcher, Watchers) ->
+    {Index, AppendWatchers} = get_watchers_by_op(Op, Watchers),
+    NewWatchers = dict:append(Path, {Op, Path, Watcher}, AppendWatchers),
+    setelement(Index, Watchers, NewWatchers).
+
+get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
+    case Op of
+        get_data      -> {1, DataWatchers};
+        exists        -> {2, ExistWatchers};
+        get_children  -> {3, ChildWatchers};
+        get_children2 -> {3, ChildWatchers};
+        _             -> {1, DataWatchers} % just in case, shouldn't be here
+    end.
+
 find_and_erase_watchers(none, Path, Watchers) ->
-    find_and_erase_watchers([get_data, exists, get_children, get_children2], Path, Watchers);
+    find_and_erase_watchers([get_data, exists, get_children], Path, Watchers);
 find_and_erase_watchers(node_created, Path, Watchers) ->
     find_and_erase_watchers([get_data, exists], Path, Watchers);
 find_and_erase_watchers(node_deleted, Path, Watchers) ->
-    find_and_erase_watchers([get_data, exists, get_children, get_children2], Path, Watchers);
+    find_and_erase_watchers([get_data, exists, get_children], Path, Watchers);
 find_and_erase_watchers(node_data_changed, Path, Watchers) ->
     find_and_erase_watchers([get_data, exists], Path, Watchers);
 find_and_erase_watchers(node_children_changed, Path, Watchers) ->
-    find_and_erase_watchers([get_children, get_children2], Path, Watchers);
+    find_and_erase_watchers([get_children], Path, Watchers);
 find_and_erase_watchers(Ops, Path, Watchers) ->
     find_and_erase_watchers(Ops, Path, Watchers, []).
 
 find_and_erase_watchers([], _Path, Watchers, Receivers) ->
     {Receivers, Watchers};
 find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
-    R = case dict:find({Op, Path}, Watchers) of
+    {Index, OpWatchers} = get_watchers_by_op(Op, Watchers),
+    R = case dict:find(Path, OpWatchers) of
         {ok, X} -> Receivers ++ X;
         error   -> Receivers
     end,
-    W = dict:erase({Op, Path}, Watchers),
+    NewWatchers = dict:erase(Path, OpWatchers),
+    W = setelement(Index, Watchers, NewWatchers),
     find_and_erase_watchers(Left, Path, W, R).
 
 send_watched_event([], _WatchedEvent) ->
