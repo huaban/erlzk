@@ -7,7 +7,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([create/5, delete/3, exists/3, exists/4, get_data/3, get_data/4, set_data/4, get_acl/2, set_acl/4,
          get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4,
-         create2/5]).
+         create2/5, add_auth/3]).
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}]).
 -define(ZK_CONNECT_TIMEOUT, 10000).
@@ -25,6 +25,7 @@
     xid = 1,
     zxid = 0,
     reqs = dict:new(),
+    auths = queue:new(),
     watchers = dict:new()
 }).
 
@@ -91,6 +92,9 @@ get_children2(Pid, Path, Watch, Watcher) ->
 create2(Pid, Path, Data, Acl, CreateMode) ->
     gen_server:call(Pid, {create2, {Path, Data, Acl, CreateMode}}).
 
+add_auth(Pid, Scheme, Auth) ->
+    gen_server:call(Pid, {add_auth, {Scheme, Auth}}).
+
 %% ===================================================================
 %% gen_server Callbacks
 %% ===================================================================
@@ -105,6 +109,14 @@ init([ServerList, Timeout]) ->
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
+handle_call({add_auth, Args}, From, State=#state{socket=Socket, ping_interval=PingIntv, auths=Auths}) ->
+    case gen_tcp:send(Socket, erlzk_codec:pack(add_auth, Args, -4)) of
+        ok ->
+            NewAuths = queue:in(From, Auths),
+            {noreply, State#state{auths=NewAuths}, PingIntv};
+        {error, Reason} ->
+            {reply, {error, Reason}, State, PingIntv}
+    end;
 handle_call({Op, Args}, From, State=#state{socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs}) ->
     case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid)) of
         ok ->
@@ -132,7 +144,7 @@ handle_cast(_Request, State=#state{ping_interval=PingIntv}) ->
 handle_info(timeout, State=#state{socket=Socket, ping_interval=PingIntv}) ->
     gen_tcp:send(Socket, <<-2:32, 11:32>>),
     {noreply, State, PingIntv};
-handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, reqs=Reqs, watchers=Watchers}) ->
+handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Auths, reqs=Reqs, watchers=Watchers}) ->
     {Xid, Zxid, Code, Body} = erlzk_codec:unpack(Packet),
     case Xid of
         -1 -> % watched event
@@ -143,7 +155,17 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, reqs=Reqs
         -2 -> % ping
             {noreply, State#state{zxid=Zxid}, PingIntv};
         -4 -> % auth
-            {noreply, State#state{zxid=Zxid}, PingIntv};
+            case queue:out(Auths) of
+                {{value, From}, NewAuths} ->
+                    Reply = case Code of
+                        ok -> {ok};
+                        _  -> {error, Code}
+                    end,
+                    gen_server:reply(From, Reply),
+                    {noreply, State#state{zxid=Zxid, auths=NewAuths}, PingIntv};
+                {empty, _} ->
+                    {noreply, State#state{zxid=Zxid}, PingIntv}
+            end;
         _  -> % normal reply
             case dict:find(Xid, Reqs) of
                 {ok, {Op, From}} ->

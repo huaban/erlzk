@@ -133,7 +133,11 @@ pack(get_children2, {Path, Watch}, Xid) ->
 
 pack(create2, {Path, Data, Acl, CreateMode}, Xid) ->
     Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
-    wrap_packet(?ZK_OP_CREATE2, Xid, Packet).
+    wrap_packet(?ZK_OP_CREATE2, Xid, Packet);
+
+pack(add_auth, {Scheme, Auth}, Xid) ->
+    Packet = <<0:32, (pack_str(Scheme))/binary, (pack_bytes(Auth))/binary>>,
+    wrap_packet(?ZK_OP_AUTH, Xid, Packet).
 
 unpack(Packet) ->
     <<Xid:32/signed, Zxid:64, Code:32/signed, Body/binary>> = Packet,

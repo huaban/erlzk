@@ -6,7 +6,7 @@
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
-         create2/2, create2/3, create2/4, create2/5]).
+         create2/2, create2/3, create2/4, create2/5, add_auth/3]).
 
 start_link(ServerList, Timeout) ->
     erlzk_conn_sup:start_conn([ServerList, Timeout]).
@@ -120,3 +120,9 @@ create2(Pid, Path, Data, Acl, CreateMode) when is_list(Data) andalso is_list(Acl
     create2(Pid, Path, list_to_binary(Data), Acl, CreateMode);
 create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
     erlzk_conn:create2(Pid, Path, Data, Acl, CreateMode).
+
+add_auth(Pid, Username, Password) when is_list(Password) ->
+    Auth = list_to_binary(Username ++ ":" ++ Password),
+    add_auth(Pid, "digest", Auth);
+add_auth(Pid, Scheme, Auth) when is_binary(Auth) ->
+    erlzk_conn:add_auth(Pid, Scheme, Auth).
