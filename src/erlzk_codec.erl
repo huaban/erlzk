@@ -137,7 +137,11 @@ pack(create2, {Path, Data, Acl, CreateMode}, Xid) ->
 
 pack(add_auth, {Scheme, Auth}, Xid) ->
     Packet = <<0:32, (pack_str(Scheme))/binary, (pack_bytes(Auth))/binary>>,
-    wrap_packet(?ZK_OP_AUTH, Xid, Packet).
+    wrap_packet(?ZK_OP_AUTH, Xid, Packet);
+
+pack(set_watches, {LastZxidSeen, DataWatches, ExistWatches, ChildWatches}, Xid) ->
+    Packet = <<LastZxidSeen:64, (pack_watches(DataWatches))/binary, (pack_watches(ExistWatches))/binary, (pack_watches(ChildWatches))/binary>>,
+    wrap_packet(?ZK_OP_SET_WATCHES, Xid, Packet).
 
 unpack(Packet) ->
     <<Xid:32/signed, Zxid:64, Code:32/signed, Body/binary>> = Packet,
@@ -213,9 +217,9 @@ pack_acl([], Packet, Size) ->
         0 -> <<-1:32/signed>>;
         _ -> <<Size:32, Packet/binary>>
     end;
-pack_acl([{Perms,Scheme,Id}|Rest], Packet, Size) ->
+pack_acl([{Perms,Scheme,Id}|Left], Packet, Size) ->
     NewPacket = <<Packet/binary, (pack_perms(Perms)):32, (pack_str(Scheme))/binary, (pack_str(Id))/binary>>,
-    pack_acl(Rest, NewPacket, Size + 1).
+    pack_acl(Left, NewPacket, Size + 1).
 
 pack_create_mode(CreateMode) ->
     Flags = case CreateMode of
@@ -246,6 +250,18 @@ pack_perms([Perm|Left], PermsValue) ->
         _ -> 0
     end,
     pack_perms(Left, (PermsValue bor Value)).
+
+pack_watches(Watches) ->
+    pack_watches(Watches, <<>>, 0).
+
+pack_watches([], Packet, Size) ->
+    case Size of
+        0 -> <<-1:32/signed>>;
+        _ -> <<Size:32, Packet/binary>>
+    end;
+pack_watches([Watch|Left], Packet, Size) ->
+    NewPacket = <<Packet/binary, (pack_str(Watch))/binary>>,
+    pack_watches(Left, NewPacket, Size + 1).
 
 wrap_packet(Type, Xid, Packet) ->
     <<Xid:32/signed, Type:32, Packet/binary>>.

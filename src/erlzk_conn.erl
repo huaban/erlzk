@@ -117,6 +117,13 @@ handle_call({add_auth, Args}, From, State=#state{socket=Socket, ping_interval=Pi
         {error, Reason} ->
             {reply, {error, Reason}, State, PingIntv}
     end;
+handle_call({set_watches, Args}, _From, State=#state{socket=Socket, ping_interval=PingIntv}) ->
+    case gen_tcp:send(Socket, erlzk_codec:pack(set_watches, Args, -8)) of
+        ok ->
+            {noreply, State, PingIntv};
+        {error, Reason} ->
+            {reply, {error, Reason}, State, PingIntv}
+    end;
 handle_call({Op, Args}, From, State=#state{socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs}) ->
     case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid)) of
         ok ->
@@ -153,6 +160,8 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Aut
             send_watched_event(Receivers, {EventType, KeeperState, Path}),
             {noreply, State#state{zxid=Zxid, watchers=NewWatchers}, PingIntv};
         -2 -> % ping
+            {noreply, State#state{zxid=Zxid}, PingIntv};
+        -8 -> % set watches
             {noreply, State#state{zxid=Zxid}, PingIntv};
         -4 -> % auth
             case queue:out(Auths) of
