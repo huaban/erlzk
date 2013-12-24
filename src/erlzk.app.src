@@ -4,7 +4,8 @@
     {registered, [erlzk_sup,erlzk_conn_sup]},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        crypto
     ]},
     {mod, {erlzk_app, []}}
 ]}.

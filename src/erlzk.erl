@@ -7,7 +7,11 @@
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
          create2/2, create2/3, create2/4, create2/5, add_auth/3]).
+-export([generate_digest/2]).
 
+%% ===================================================================
+%% Initiate Functions
+%% ===================================================================
 start_link(ServerList, Timeout) ->
     erlzk_conn_sup:start_conn([ServerList, Timeout]).
 
@@ -17,6 +21,9 @@ start_link(ServerName, ServerList, Timeout) ->
 stop(Pid) ->
     erlzk_conn:stop(Pid).
 
+%% ===================================================================
+%% ZooKeeper API
+%% ===================================================================
 create(Pid, Path) ->
     create(Pid, Path, <<>>).
 
@@ -126,3 +133,12 @@ add_auth(Pid, Username, Password) when is_list(Password) ->
     add_auth(Pid, "digest", Auth);
 add_auth(Pid, Scheme, Auth) when is_binary(Auth) ->
     erlzk_conn:add_auth(Pid, Scheme, Auth).
+
+%% ===================================================================
+%% Helper Functions
+%% ===================================================================
+generate_digest(Username, Password) ->
+    Auth = list_to_binary(Username ++ ":" ++ Password),
+    Sha1 = crypto:hash(sha, Auth),
+    Base64 = base64:encode(Sha1),
+    Username ++ ":" ++ binary_to_list(Base64).
