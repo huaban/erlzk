@@ -256,7 +256,7 @@ pack_watches(Watches) ->
 
 pack_watches([], Packet, Size) ->
     case Size of
-        0 -> <<-1:32/signed>>;
+        0 -> <<0:32/signed>>;
         _ -> <<Size:32, Packet/binary>>
     end;
 pack_watches([Watch|Left], Packet, Size) ->
