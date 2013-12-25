@@ -3,7 +3,7 @@
 
 -include_lib("../include/erlzk.hrl").
 
--export([start/2, start/3, start_link/2, start_link/3, stop/1]).
+-export([start/3, start/4, start_link/3, start_link/4, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([create/5, delete/3, exists/3, exists/4, get_data/3, get_data/4, set_data/4, get_acl/2, set_acl/4,
          get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4,
@@ -25,6 +25,7 @@
     ping_interval,
     xid = 1,
     zxid = 0,
+    monitor = undefined,
     reqs = dict:new(),
     auths = queue:new(),
     watchers = {dict:new(), dict:new(), dict:new()}
@@ -33,17 +34,17 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
-start(ServerList, Timeout) ->
-    gen_server:start(?MODULE, [ServerList, Timeout], []).
+start(ServerList, Timeout, Options) ->
+    gen_server:start(?MODULE, [ServerList, Timeout, Options], []).
 
-start(ServerName, ServerList, Timeout) ->
-    gen_server:start(ServerName, ?MODULE, [ServerList, Timeout], []).
+start(ServerName, ServerList, Timeout, Options) ->
+    gen_server:start(ServerName, ?MODULE, [ServerList, Timeout, Options], []).
 
-start_link(ServerList, Timeout) ->
-    gen_server:start_link(?MODULE, [ServerList, Timeout], []).
+start_link(ServerList, Timeout, Options) ->
+    gen_server:start_link(?MODULE, [ServerList, Timeout, Options], []).
 
-start_link(ServerName, ServerList, Timeout) ->
-    gen_server:start_link(ServerName, ?MODULE, [ServerList, Timeout], []).
+start_link(ServerName, ServerList, Timeout, Options) ->
+    gen_server:start_link(ServerName, ?MODULE, [ServerList, Timeout, Options], []).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
@@ -99,11 +100,12 @@ add_auth(Pid, Scheme, Auth) ->
 %% ===================================================================
 %% gen_server Callbacks
 %% ===================================================================
-init([ServerList, Timeout]) ->
+init([ServerList, Timeout, Options]) ->
+    Monitor = proplists:get_value(monitor, Options),
     process_flag(trap_exit, true),
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, State=#state{ping_interval=PingIntv}} ->
-            {ok, State#state{servers=ServerList}, PingIntv};
+            {ok, State#state{servers=ServerList, monitor=Monitor}, PingIntv};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -196,10 +198,12 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Aut
                     {noreply, State#state{zxid=Zxid}, PingIntv}
             end
     end;
-handle_info({tcp_closed, _Port}, State) ->
+handle_info({tcp_closed, _Port}, State=#state{host=Host, port=Port, monitor=Monitor}) ->
+    notify_monitor_server_state(Monitor, disconnected, Host, Port),
     reconnect(State#state{socket=undefined, host=undefined, port=undefined});
-handle_info({tcp_error, _Port, _Reason}, State=#state{socket=Socket}) ->
+handle_info({tcp_error, _Port, _Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor}) ->
     gen_tcp:close(Socket),
+    notify_monitor_server_state(Monitor, disconnected, Host, Port),
     reconnect(State#state{socket=undefined, host=undefined, port=undefined});
 handle_info(reconnect, State) ->
     reconnect(State);
@@ -259,10 +263,11 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
-reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd}) ->
+reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd, monitor=Monitor}) ->
     case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
         {ok, NewState=#state{ping_interval=PingIntv}} ->
-            {noreply, NewState#state{servers=ServerList}, PingIntv};
+            notify_monitor_server_state(Monitor, connected, NewState#state.host, NewState#state.port),
+            {noreply, NewState#state{servers=ServerList, monitor=Monitor}, PingIntv};
         {error, session_expired} ->
             reconnect_after_session_expired(State);
         {error, _Reason} ->
@@ -270,13 +275,22 @@ reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeou
             {noreply, State}
     end.
 
-reconnect_after_session_expired(State=#state{servers=ServerList, timeout=Timeout}) ->
+reconnect_after_session_expired(State=#state{servers=ServerList, timeout=Timeout, monitor=Monitor}) ->
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, NewState=#state{ping_interval=PingIntv}} ->
-            {noreply, NewState#state{servers=ServerList}, PingIntv};
+            notify_monitor_server_state(Monitor, expired, NewState#state.host, NewState#state.port),
+            {noreply, NewState#state{servers=ServerList, monitor=Monitor}, PingIntv};
         {error, _Reason} ->
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
+    end.
+
+notify_monitor_server_state(Monitor, State, Host, Port) ->
+    case Monitor of
+        undefined ->
+            ok;
+        _ ->
+            Monitor ! {State, Host, Port}
     end.
 
 append_watcher(Op, Path, Watcher, Watchers) ->

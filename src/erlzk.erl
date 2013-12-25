@@ -2,7 +2,7 @@
 
 -include_lib("../include/erlzk.hrl").
 
--export([start_link/2, start_link/3, stop/1]).
+-export([start_link/2, start_link/3, start_link/4, stop/1]).
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
@@ -13,10 +13,16 @@
 %% Initiate Functions
 %% ===================================================================
 start_link(ServerList, Timeout) ->
-    erlzk_conn_sup:start_conn([ServerList, Timeout]).
+    start_link(ServerList, Timeout, []).
 
-start_link(ServerName, ServerList, Timeout) ->
-    erlzk_conn_sup:start_conn([ServerName, ServerList, Timeout]).
+start_link(ServerList, Timeout, Options) when is_list(Options) ->
+    erlzk_conn_sup:start_conn([ServerList, Timeout, Options]);
+
+start_link(ServerName, ServerList, Timeout) when is_integer(Timeout) ->
+    start_link(ServerName, ServerList, Timeout, []).
+
+start_link(ServerName, ServerList, Timeout, Options) ->
+    erlzk_conn_sup:start_conn([ServerName, ServerList, Timeout, Options]).
 
 stop(Pid) ->
     erlzk_conn:stop(Pid).
