@@ -11,6 +11,7 @@
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}]).
 -define(ZK_CONNECT_TIMEOUT, 10000).
+-define(ZK_RECONNECT_INTERVAL, 10000).
 
 -record(state, {
     servers = [],
@@ -196,9 +197,12 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Aut
             end
     end;
 handle_info({tcp_closed, _Port}, State) ->
-    {stop, tcp_closed, State};
-handle_info({tcp_error, _Port, Reason}, State) ->
-    {stop, Reason, State};
+    reconnect(State#state{socket=undefined, host=undefined, port=undefined});
+handle_info({tcp_error, _Port, _Reason}, State=#state{socket=Socket}) ->
+    gen_tcp:close(Socket),
+    reconnect(State#state{socket=undefined, host=undefined, port=undefined});
+handle_info(reconnect, State) ->
+    reconnect(State);
 handle_info(_Info, State=#state{ping_interval=PingIntv}) ->
     {noreply, State, PingIntv}.
 
@@ -234,9 +238,15 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
                     receive
                         {tcp, Socket, Packet} ->
                             {ProtoVer, RealTimeOut, SessionId, Password} = erlzk_codec:unpack(connect, Packet),
-                            {ok, #state{socket=Socket, host=Host, port=Port,
-                                        proto_ver=ProtoVer, timeout=RealTimeOut, session_id=SessionId, password=Password,
-                                        ping_interval=(RealTimeOut div 3)}};
+                            case SessionId of
+                                0 ->
+                                    gen_tcp:close(Socket),
+                                    {error, session_expired};
+                                _ ->
+                                    {ok, #state{socket=Socket, host=Host, port=Port,
+                                                proto_ver=ProtoVer, timeout=RealTimeOut, session_id=SessionId, password=Password,
+                                                ping_interval=(RealTimeOut div 3)}}
+                            end;
                         {tcp_closed, Socket} ->
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword);
                         {tcp_error, Socket, _Reason} ->
@@ -247,6 +257,26 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             end;
         {error, _Reason} ->
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
+    end.
+
+reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd}) ->
+    case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
+        {ok, NewState=#state{ping_interval=PingIntv}} ->
+            {noreply, NewState#state{servers=ServerList}, PingIntv};
+        {error, session_expired} ->
+            reconnect_after_session_expired(State);
+        {error, _Reason} ->
+            erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
+            {noreply, State}
+    end.
+
+reconnect_after_session_expired(State=#state{servers=ServerList, timeout=Timeout}) ->
+    case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
+        {ok, NewState=#state{ping_interval=PingIntv}} ->
+            {noreply, NewState#state{servers=ServerList}, PingIntv};
+        {error, _Reason} ->
+            erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
+            {noreply, State}
     end.
 
 append_watcher(Op, Path, Watcher, Watchers) ->
