@@ -15,6 +15,7 @@
 
 -record(state, {
     servers = [],
+    auth_data = [],
     socket,
     host,
     port,
@@ -107,10 +108,16 @@ init([ServerList, Timeout, Options]) ->
         true  -> false;
         _     -> true
     end,
+    AuthData = case proplists:get_value(auth_data, Options) of
+        undefined -> [];
+        Value     -> Value
+    end,
     process_flag(trap_exit, true),
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, State=#state{ping_interval=PingIntv}} ->
-            {ok, State#state{servers=ServerList, reset_watch=ResetWatch, monitor=Monitor}, PingIntv};
+            NewState = State#state{servers=ServerList, auth_data=AuthData, reset_watch=ResetWatch, monitor=Monitor},
+            add_init_auths(AuthData, NewState),
+            {ok, NewState, PingIntv};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -181,7 +188,9 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Aut
                         ok -> {ok};
                         _  -> {error, Code}
                     end,
-                    gen_server:reply(From, Reply),
+                    if From =/= self() -> % init auth data reply don't need to notify
+                        gen_server:reply(From, Reply)
+                    end,
                     {noreply, State#state{zxid=Zxid, auths=NewAuths}, PingIntv};
                 {empty, _} ->
                     {noreply, State#state{zxid=Zxid}, PingIntv}
@@ -271,11 +280,11 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
-reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
-                       xid=Xid, reset_watch=ResetWatch, monitor=Monitor, auths=Auths, watchers=Watchers}) ->
+reconnect(State=#state{servers=ServerList, auth_data=AuthData, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
+                       xid=Xid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
-            RenewState = NewState#state{servers=ServerList, xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor, auths=Auths, watchers=Watchers},
+            RenewState = NewState#state{servers=ServerList, auth_data=AuthData, xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers},
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, session_expired} ->
@@ -285,16 +294,23 @@ reconnect(State=#state{servers=ServerList, proto_ver=ProtoVer, zxid=Zxid, timeou
             {noreply, State}
     end.
 
-reconnect_after_session_expired(State=#state{servers=ServerList, timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
+reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthData, timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
-            RenewState = reset_watch_return_new_state(NewState#state{servers=ServerList, reset_watch=ResetWatch, monitor=Monitor}, Watchers),
+            RenewState = reset_watch_return_new_state(NewState#state{servers=ServerList, auth_data=AuthData, reset_watch=ResetWatch, monitor=Monitor}, Watchers),
+            add_init_auths(AuthData, RenewState),
             notify_monitor_server_state(Monitor, expired, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, _Reason} ->
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
+
+add_init_auths([], _State) ->
+    ok;
+add_init_auths([AuthData|Left], State) ->
+    handle_call({add_auth, AuthData}, self(), State),
+    add_init_auths(Left, State).
 
 reset_watch_return_new_state(State=#state{zxid=Zxid, reset_watch=ResetWatch}, Watchers={DataWatchers, ExistWatchers, ChildWatchers}) ->
     case ResetWatch of
