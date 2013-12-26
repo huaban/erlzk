@@ -341,7 +341,7 @@ notify_monitor_server_state(Monitor, State, Host, Port) ->
 
 store_watcher(Op, Path, Watcher, Watchers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
-    NewWatchers = dict:store(Path, {Op, Path, Watcher}, DestWatcher),
+    NewWatchers = dict:store(Path, {erlang:now(), Op, Path, Watcher}, DestWatcher),
     setelement(Index, Watchers, NewWatchers).
 
 get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
@@ -367,7 +367,7 @@ find_and_erase_watchers(Ops, Path, Watchers) ->
     find_and_erase_watchers(Ops, Path, Watchers, []).
 
 find_and_erase_watchers([], _Path, Watchers, Receivers) ->
-    {Receivers, Watchers};
+    {lists:sort(Receivers), Watchers};
 find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
     R = case dict:find(Path, DestWatcher) of
@@ -380,7 +380,7 @@ find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
 
 send_watched_event([], _WatchedEvent) ->
     ok;
-send_watched_event([{Op, Path, Watcher}|Left], WatchedEvent) ->
+send_watched_event([{_Time, Op, Path, Watcher}|Left], WatchedEvent) ->
     Watcher ! {Op, Path, WatchedEvent},
     send_watched_event(Left, WatchedEvent).
 
