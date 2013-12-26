@@ -157,7 +157,7 @@ handle_call({Op, Args, Watcher}, From, State=#state{chroot=Chroot, socket=Socket
         ok ->
             NewReqs = dict:store(Xid, {Op, From}, Reqs),
             Path = element(1, Args),
-            NewWatchers = append_watcher(Op, Path, Watcher, Watchers),
+            NewWatchers = store_watcher(Op, Path, Watcher, Watchers),
             {noreply, State#state{xid=Xid+1, reqs=NewReqs, watchers=NewWatchers}, PingIntv};
         {error, Reason} ->
             {reply, {error, Reason}, State#state{xid=Xid+1}, PingIntv}
@@ -339,9 +339,9 @@ notify_monitor_server_state(Monitor, State, Host, Port) ->
             Monitor ! {State, Host, Port}
     end.
 
-append_watcher(Op, Path, Watcher, Watchers) ->
-    {Index, AppendWatchers} = get_watchers_by_op(Op, Watchers),
-    NewWatchers = dict:append(Path, {Op, Path, Watcher}, AppendWatchers),
+store_watcher(Op, Path, Watcher, Watchers) ->
+    {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
+    NewWatchers = dict:store(Path, {Op, Path, Watcher}, DestWatcher),
     setelement(Index, Watchers, NewWatchers).
 
 get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
@@ -369,12 +369,12 @@ find_and_erase_watchers(Ops, Path, Watchers) ->
 find_and_erase_watchers([], _Path, Watchers, Receivers) ->
     {Receivers, Watchers};
 find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
-    {Index, OpWatchers} = get_watchers_by_op(Op, Watchers),
-    R = case dict:find(Path, OpWatchers) of
-        {ok, X} -> Receivers ++ X;
+    {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
+    R = case dict:find(Path, DestWatcher) of
+        {ok, X} -> [X|Receivers];
         error   -> Receivers
     end,
-    NewWatchers = dict:erase(Path, OpWatchers),
+    NewWatchers = dict:erase(Path, DestWatcher),
     W = setelement(Index, Watchers, NewWatchers),
     find_and_erase_watchers(Left, Path, W, R).
 
