@@ -16,6 +16,7 @@
 -record(state, {
     servers = [],
     auth_data = [],
+    chroot = "/",
     socket,
     host,
     port,
@@ -110,12 +111,16 @@ init([ServerList, Timeout, Options]) ->
     end,
     AuthData = case proplists:get_value(auth_data, Options) of
         undefined -> [];
-        Value     -> Value
+        AdValue   -> AdValue
+    end,
+    Chroot = case proplists:get_value(chroot, Options) of
+        undefined -> "/";
+        CrValue   -> get_chroot_path(CrValue)
     end,
     process_flag(trap_exit, true),
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, State=#state{ping_interval=PingIntv}} ->
-            NewState = State#state{servers=ServerList, auth_data=AuthData, reset_watch=ResetWatch, monitor=Monitor},
+            NewState = State#state{servers=ServerList, auth_data=AuthData, chroot=Chroot, reset_watch=ResetWatch, monitor=Monitor},
             add_init_auths(AuthData, NewState),
             {ok, NewState, PingIntv};
         {error, Reason} ->
@@ -139,16 +144,16 @@ handle_call({set_watches, Args}, _From, State=#state{socket=Socket, ping_interva
         {error, Reason} ->
             {reply, {error, Reason}, State, PingIntv}
     end;
-handle_call({Op, Args}, From, State=#state{socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs}) ->
-    case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid)) of
+handle_call({Op, Args}, From, State=#state{chroot=Chroot, socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs}) ->
+    case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid, Chroot)) of
         ok ->
             NewReqs = dict:store(Xid, {Op, From}, Reqs),
             {noreply, State#state{xid=Xid+1, reqs=NewReqs}, PingIntv};
         {error, Reason} ->
             {reply, {error, Reason}, State#state{xid=Xid+1}, PingIntv}
     end;
-handle_call({Op, Args, Watcher}, From, State=#state{socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs, watchers=Watchers}) ->
-    case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid)) of
+handle_call({Op, Args, Watcher}, From, State=#state{chroot=Chroot, socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs, watchers=Watchers}) ->
+    case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid, Chroot)) of
         ok ->
             NewReqs = dict:store(Xid, {Op, From}, Reqs),
             Path = element(1, Args),
@@ -166,11 +171,11 @@ handle_cast(_Request, State=#state{ping_interval=PingIntv}) ->
 handle_info(timeout, State=#state{socket=Socket, ping_interval=PingIntv}) ->
     gen_tcp:send(Socket, <<-2:32, 11:32>>),
     {noreply, State, PingIntv};
-handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Auths, reqs=Reqs, watchers=Watchers}) ->
+handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=PingIntv, auths=Auths, reqs=Reqs, watchers=Watchers}) ->
     {Xid, Zxid, Code, Body} = erlzk_codec:unpack(Packet),
     case Xid of
         -1 -> % watched event
-            {EventType, KeeperState, Path} = erlzk_codec:unpack(watched_event, Body),
+            {EventType, KeeperState, Path} = erlzk_codec:unpack(watched_event, Body, Chroot),
             {Receivers, NewWatchers} = find_and_erase_watchers(EventType, Path, Watchers),
             send_watched_event(Receivers, {EventType, KeeperState, Path}),
             {noreply, State#state{zxid=Zxid, watchers=NewWatchers}, PingIntv};
@@ -204,7 +209,7 @@ handle_info({tcp, _Port, Packet}, State=#state{ping_interval=PingIntv, auths=Aut
                             if size(Body) =:= 0 ->
                                 {ok};
                                true ->
-                                {ok, erlzk_codec:unpack(Op, Body)}
+                                {ok, erlzk_codec:unpack(Op, Body, Chroot)}
                             end;
                         _  ->
                             {error, Code}
@@ -280,11 +285,13 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
-reconnect(State=#state{servers=ServerList, auth_data=AuthData, proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
+reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
+                       proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
                        xid=Xid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
-            RenewState = NewState#state{servers=ServerList, auth_data=AuthData, xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers},
+            RenewState = NewState#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
+                                        xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers},
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, session_expired} ->
@@ -294,10 +301,12 @@ reconnect(State=#state{servers=ServerList, auth_data=AuthData, proto_ver=ProtoVe
             {noreply, State}
     end.
 
-reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthData, timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
+reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
+                                             timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
-            RenewState = reset_watch_return_new_state(NewState#state{servers=ServerList, auth_data=AuthData, reset_watch=ResetWatch, monitor=Monitor}, Watchers),
+            RenewState = reset_watch_return_new_state(NewState#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
+                                                                     reset_watch=ResetWatch, monitor=Monitor}, Watchers),
             add_init_auths(AuthData, RenewState),
             notify_monitor_server_state(Monitor, expired, Host, Port),
             {noreply, RenewState, PingIntv};
@@ -374,3 +383,7 @@ send_watched_event([], _WatchedEvent) ->
 send_watched_event([{Op, Path, Watcher}|Left], WatchedEvent) ->
     Watcher ! {Op, Path, WatchedEvent},
     send_watched_event(Left, WatchedEvent).
+
+get_chroot_path(P) -> get_chroot_path0(lists:reverse(P)).
+get_chroot_path0("/" ++ P) -> get_chroot_path0(P);
+get_chroot_path0(P) -> lists:reverse(P).

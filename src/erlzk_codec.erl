@@ -2,7 +2,7 @@
 
 -include_lib("../include/erlzk.hrl").
 
--export([pack/2, pack/3, unpack/1, unpack/2]).
+-export([pack/2, pack/3, pack/4, unpack/1, unpack/2, unpack/3]).
 
 -define(ZK_PERM_READ, 1).   % can read node’s value and list its children
 -define(ZK_PERM_WRITE, 2).  % can set the node’s value
@@ -75,66 +75,6 @@
 pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, SessionId, Password}) ->
     <<ProtocolVersion:32, LastZxidSeen:64, Timeout:32, SessionId:64, (pack_bytes(Password))/binary>>.
 
-pack(create, {Path, Data, Acl, CreateMode}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
-    wrap_packet(?ZK_OP_CREATE, Xid, Packet);
-
-pack(delete, {Path, Version}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, Version:32/signed>>,
-    wrap_packet(?ZK_OP_DELETE, Xid, Packet);
-
-pack(exists, {Path, true}, Xid) ->
-    pack(exists, {Path, 1}, Xid);
-pack(exists, {Path, false}, Xid) ->
-    pack(exists, {Path, 0}, Xid);
-pack(exists, {Path, Watch}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, Watch:8>>,
-    wrap_packet(?ZK_OP_EXISTS, Xid, Packet);
-
-pack(get_data, {Path, true}, Xid) ->
-    pack(get_data, {Path, 1}, Xid);
-pack(get_data, {Path, false}, Xid) ->
-    pack(get_data, {Path, 0}, Xid);
-pack(get_data, {Path, Watch}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, Watch:8>>,
-    wrap_packet(?ZK_OP_GET_DATA, Xid, Packet);
-
-pack(set_data, {Path, Data, Version}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, Version:32/signed>>,
-    wrap_packet(?ZK_OP_SET_DATA, Xid, Packet);
-
-pack(get_acl, {Path}, Xid) ->
-    Packet = <<(pack_str(Path))/binary>>,
-    wrap_packet(?ZK_OP_GET_ACL, Xid, Packet);
-
-pack(set_acl, {Path, Acl, Version}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, (pack_acl(Acl))/binary, Version:32/signed>>,
-    wrap_packet(?ZK_OP_SET_ACL, Xid, Packet);
-
-pack(get_children, {Path, true}, Xid) ->
-    pack(get_children, {Path, 1}, Xid);
-pack(get_children, {Path, false}, Xid) ->
-    pack(get_children, {Path, 0}, Xid);
-pack(get_children, {Path, Watch}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, Watch:8>>,
-    wrap_packet(?ZK_OP_GET_CHILDREN, Xid, Packet);
-
-pack(sync, {Path}, Xid) ->
-    Packet = <<(pack_str(Path))/binary>>,
-    wrap_packet(?ZK_OP_SYNC, Xid, Packet);
-
-pack(get_children2, {Path, true}, Xid) ->
-    pack(get_children2, {Path, 1}, Xid);
-pack(get_children2, {Path, false}, Xid) ->
-    pack(get_children2, {Path, 0}, Xid);
-pack(get_children2, {Path, Watch}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, Watch:8>>,
-    wrap_packet(?ZK_OP_GET_CHILDREN2, Xid, Packet);
-
-pack(create2, {Path, Data, Acl, CreateMode}, Xid) ->
-    Packet = <<(pack_str(Path))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
-    wrap_packet(?ZK_OP_CREATE2, Xid, Packet);
-
 pack(add_auth, {Scheme, Auth}, Xid) ->
     Packet = <<0:32, (pack_str(Scheme))/binary, (pack_bytes(Auth))/binary>>,
     wrap_packet(?ZK_OP_AUTH, Xid, Packet);
@@ -143,6 +83,66 @@ pack(set_watches, {LastZxidSeen, DataWatches, ExistWatches, ChildWatches}, Xid) 
     Packet = <<LastZxidSeen:64, (pack_watches(DataWatches))/binary, (pack_watches(ExistWatches))/binary, (pack_watches(ChildWatches))/binary>>,
     wrap_packet(?ZK_OP_SET_WATCHES, Xid, Packet).
 
+pack(create, {Path, Data, Acl, CreateMode}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
+    wrap_packet(?ZK_OP_CREATE, Xid, Packet);
+
+pack(delete, {Path, Version}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Version:32/signed>>,
+    wrap_packet(?ZK_OP_DELETE, Xid, Packet);
+
+pack(exists, {Path, true}, Xid, Chroot) ->
+    pack(exists, {Path, 1}, Xid, Chroot);
+pack(exists, {Path, false}, Xid, Chroot) ->
+    pack(exists, {Path, 0}, Xid, Chroot);
+pack(exists, {Path, Watch}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Watch:8>>,
+    wrap_packet(?ZK_OP_EXISTS, Xid, Packet);
+
+pack(get_data, {Path, true}, Xid, Chroot) ->
+    pack(get_data, {Path, 1}, Xid, Chroot);
+pack(get_data, {Path, false}, Xid, Chroot) ->
+    pack(get_data, {Path, 0}, Xid, Chroot);
+pack(get_data, {Path, Watch}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Watch:8>>,
+    wrap_packet(?ZK_OP_GET_DATA, Xid, Packet);
+
+pack(set_data, {Path, Data, Version}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, Version:32/signed>>,
+    wrap_packet(?ZK_OP_SET_DATA, Xid, Packet);
+
+pack(get_acl, {Path}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary>>,
+    wrap_packet(?ZK_OP_GET_ACL, Xid, Packet);
+
+pack(set_acl, {Path, Acl, Version}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_acl(Acl))/binary, Version:32/signed>>,
+    wrap_packet(?ZK_OP_SET_ACL, Xid, Packet);
+
+pack(get_children, {Path, true}, Xid, Chroot) ->
+    pack(get_children, {Path, 1}, Xid, Chroot);
+pack(get_children, {Path, false}, Xid, Chroot) ->
+    pack(get_children, {Path, 0}, Xid, Chroot);
+pack(get_children, {Path, Watch}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Watch:8>>,
+    wrap_packet(?ZK_OP_GET_CHILDREN, Xid, Packet);
+
+pack(sync, {Path}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary>>,
+    wrap_packet(?ZK_OP_SYNC, Xid, Packet);
+
+pack(get_children2, {Path, true}, Xid, Chroot) ->
+    pack(get_children2, {Path, 1}, Xid, Chroot);
+pack(get_children2, {Path, false}, Xid, Chroot) ->
+    pack(get_children2, {Path, 0}, Xid, Chroot);
+pack(get_children2, {Path, Watch}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Watch:8>>,
+    wrap_packet(?ZK_OP_GET_CHILDREN2, Xid, Packet);
+
+pack(create2, {Path, Data, Acl, CreateMode}, Xid, Chroot) ->
+    Packet = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
+    wrap_packet(?ZK_OP_CREATE2, Xid, Packet).
+
 unpack(Packet) ->
     <<Xid:32/signed, Zxid:64, Code:32/signed, Body/binary>> = Packet,
     {Xid, Zxid, code_to_atom(Code), Body}.
@@ -150,53 +150,67 @@ unpack(Packet) ->
 unpack(connect, Packet) ->
     <<ProtocolVersion:32, TimeOut:32, SessionId:64, Left/binary>> = Packet,
     {Password, _}= unpack_bytes(Left),
-    {ProtocolVersion, TimeOut, SessionId, Password};
+    {ProtocolVersion, TimeOut, SessionId, Password}.
 
-unpack(create, Packet) ->
+unpack(create, Packet, Chroot) ->
     {Path, _} = unpack_str(Packet),
-    Path;
+    unchroot(Path, Chroot);
 
-unpack(exists, Packet) ->
+unpack(exists, Packet, _Chroot) ->
     unpack_stat(Packet);
 
-unpack(get_data, Packet) ->
+unpack(get_data, Packet, _Chroot) ->
     {Data, Left} = unpack_bytes(Packet),
     {Data, unpack_stat(Left)};
 
-unpack(set_data, Packet) ->
+unpack(set_data, Packet, _Chroot) ->
     unpack_stat(Packet);
 
-unpack(get_acl, Packet) ->
+unpack(get_acl, Packet, _Chroot) ->
     {Acl, Left} = unpack_acl(Packet),
     {Acl, unpack_stat(Left)};
 
-unpack(set_acl, Packet) ->
+unpack(set_acl, Packet, _Chroot) ->
     unpack_stat(Packet);
 
-unpack(get_children, Packet) ->
+unpack(get_children, Packet, _Chroot) ->
     {Children, _} = unpack_strs(Packet),
     Children;
 
-unpack(sync, Packet) ->
+unpack(sync, Packet, Chroot) ->
     {Path, _} = unpack_str(Packet),
-    Path;
+    unchroot(Path, Chroot);
 
-unpack(get_children2, Packet) ->
+unpack(get_children2, Packet, _Chroot) ->
     {Children, Left} = unpack_strs(Packet),
     {Children, unpack_stat(Left)};
 
-unpack(create2, Packet) ->
+unpack(create2, Packet, Chroot) ->
     {Path, Left} = unpack_str(Packet),
-    {Path, unpack_stat(Left)};
+    {unchroot(Path, Chroot), unpack_stat(Left)};
 
-unpack(watched_event, Packet) ->
+unpack(watched_event, Packet, Chroot) ->
     <<Type:32/signed, State:32/signed, Left/binary>> = Packet,
     {Path, _} = unpack_str(Left),
-    {event_type_to_atom(Type), keeper_state_to_atom(State), Path}.
+    {event_type_to_atom(Type), keeper_state_to_atom(State), unchroot(Path, Chroot)}.
 
 %% ===================================================================
 %% Internal Functions
 %% ===================================================================
+chroot(Path, Chroot) ->
+    case Chroot of
+        "/" -> Path;
+        ""  -> Path;
+        _   -> Chroot ++ Path
+    end.
+
+unchroot(Path, Chroot) ->
+    case Chroot of
+        "/" -> Path;
+        ""  -> Path;
+        _   -> string:substr(Path, string:len(Chroot) + 1)
+    end.
+
 pack_str(Str) ->
     Length = iolist_size(Str),
     if Length =:= 0 -> <<-1:32/signed>>;
