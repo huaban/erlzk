@@ -41,26 +41,22 @@ close(Pid) ->
 create(Pid, Path) ->
     create(Pid, Path, <<>>).
 
-create(Pid, Path, Data) when is_list(Data) orelse is_binary(Data) ->
+create(Pid, Path, Data) when is_binary(Data) ->
     create(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent);
 create(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
     create(Pid, Path, <<>>, Acl, persistent);
 create(Pid, Path, CreateMode) when is_atom(CreateMode) ->
     create(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode).
 
-create(Pid, Path, Data, Acl) when (is_list(Data) orelse is_binary(Data)) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
+create(Pid, Path, Data, Acl) when is_binary(Data) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
     create(Pid, Path, Data, Acl, persistent);
-create(Pid, Path, Data, CreateMode) when (is_list(Data) orelse is_binary(Data)) andalso is_atom(CreateMode) ->
+create(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(CreateMode) ->
     create(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode);
 create(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) andalso is_atom(CreateMode) ->
     create(Pid, Path, <<>>, Acl, CreateMode).
 
-create(Pid, Path, Data, Acl, CreateMode) when is_list(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
-    create(Pid, Path, list_to_binary(Data), [Acl], CreateMode);
 create(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
     create(Pid, Path, Data, [Acl], CreateMode);
-create(Pid, Path, Data, Acl, CreateMode) when is_list(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
-    create(Pid, Path, list_to_binary(Data), Acl, CreateMode);
 create(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
     erlzk_conn:create(Pid, Path, Data, Acl, CreateMode).
 
@@ -119,26 +115,22 @@ get_children2(Pid, Path, Watcher) ->
 create2(Pid, Path) ->
     create2(Pid, Path, <<>>).
 
-create2(Pid, Path, Data) when is_list(Data) orelse is_binary(Data) ->
+create2(Pid, Path, Data) when is_binary(Data) ->
     create2(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent);
 create2(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
     create2(Pid, Path, <<>>, Acl, persistent);
 create2(Pid, Path, CreateMode) when is_atom(CreateMode) ->
     create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode).
 
-create2(Pid, Path, Data, Acl) when (is_list(Data) orelse is_binary(Data)) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
+create2(Pid, Path, Data, Acl) when is_binary(Data) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
     create2(Pid, Path, Data, Acl, persistent);
-create2(Pid, Path, Data, CreateMode) when (is_list(Data) orelse is_binary(Data)) andalso is_atom(CreateMode) ->
+create2(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(CreateMode) ->
     create2(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode);
 create2(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) andalso is_atom(CreateMode) ->
     create2(Pid, Path, <<>>, Acl, CreateMode).
 
-create2(Pid, Path, Data, Acl, CreateMode) when is_list(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
-    create2(Pid, Path, list_to_binary(Data), [Acl], CreateMode);
 create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
     create2(Pid, Path, Data, [Acl], CreateMode);
-create2(Pid, Path, Data, Acl, CreateMode) when is_list(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
-    create2(Pid, Path, list_to_binary(Data), Acl, CreateMode);
 create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
     erlzk_conn:create2(Pid, Path, Data, Acl, CreateMode).
 
