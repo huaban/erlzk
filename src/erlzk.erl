@@ -1,6 +1,6 @@
 -module(erlzk).
 
--include_lib("../include/erlzk.hrl").
+-include("erlzk.hrl").
 
 -export([start/0, stop/0, connect/2, connect/3, connect/4, close/1]).
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,

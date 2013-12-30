@@ -1,7 +1,7 @@
 -module(erlzk_conn).
 -behaviour(gen_server).
 
--include_lib("../include/erlzk.hrl").
+-include("erlzk.hrl").
 
 -export([start/3, start/4, start_link/3, start_link/4, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).

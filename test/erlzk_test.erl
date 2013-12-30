@@ -1,7 +1,7 @@
 -module(erlzk_test).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("../include/erlzk.hrl").
+-include("erlzk.hrl").
 
 erlzk_test_() ->
     {foreach,

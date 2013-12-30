@@ -1,6 +1,6 @@
 -module(erlzk_codec).
 
--include_lib("../include/erlzk.hrl").
+-include("erlzk.hrl").
 
 -export([pack/2, pack/3, pack/4, unpack/1, unpack/2, unpack/3]).
 
