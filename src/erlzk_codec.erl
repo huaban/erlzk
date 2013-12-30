@@ -10,18 +10,10 @@
 -define(ZK_PERM_DELETE, 8). % can delete children
 -define(ZK_PERM_ADMIN, 16). % can execute set_acl
 
--define(ZK_EVENT_TYPE_NONE, -1).
 -define(ZK_EVENT_TYPE_NODE_CREATED, 1).
 -define(ZK_EVENT_TYPE_NODE_DELETED, 2).
 -define(ZK_EVENT_TYPE_NODE_DATA_CHANGED, 3).
 -define(ZK_EVENT_TYPE_NODE_CHILDREN_CHANGED, 4).
-
--define(ZK_KEEPER_STATE_DISCONNECTED, 0).
--define(ZK_KEEPER_STATE_SYNC_CONNECTED, 3).
--define(ZK_KEEPER_STATE_AUTH_FAILED, 4).
--define(ZK_KEEPER_STATE_CONNECTED_READ_ONLY, 5).
--define(ZK_KEEPER_STATE_SASL_AUTHENTICATED, 6).
--define(ZK_KEEPER_STATE_EXPIRED, -112).
 
 -define(ZK_OP_CREATE, 1).
 -define(ZK_OP_DELETE, 2).
@@ -192,7 +184,7 @@ unpack(create2, Packet, Chroot) ->
 unpack(watched_event, Packet, Chroot) ->
     <<Type:32/signed, State:32/signed, Left/binary>> = Packet,
     {Path, _} = unpack_str(Left),
-    {event_type_to_atom(Type), keeper_state_to_atom(State), unchroot(Path, Chroot)}.
+    {event_type_to_atom(Type), State, unchroot(Path, Chroot)}.
 
 %% ===================================================================
 %% Internal Functions
@@ -349,21 +341,10 @@ unpack_stat(Packet) ->
 
 event_type_to_atom(Type) ->
     case Type of
-        ?ZK_EVENT_TYPE_NONE -> none;
         ?ZK_EVENT_TYPE_NODE_CREATED -> node_created;
         ?ZK_EVENT_TYPE_NODE_DELETED -> node_deleted;
         ?ZK_EVENT_TYPE_NODE_DATA_CHANGED -> node_data_changed;
         ?ZK_EVENT_TYPE_NODE_CHILDREN_CHANGED -> node_children_changed
-    end.
-
-keeper_state_to_atom(State) ->
-    case State of
-        ?ZK_KEEPER_STATE_DISCONNECTED -> disconnected;
-        ?ZK_KEEPER_STATE_SYNC_CONNECTED -> sync_connected;
-        ?ZK_KEEPER_STATE_AUTH_FAILED -> auth_failed;
-        ?ZK_KEEPER_STATE_CONNECTED_READ_ONLY -> connected_read_only;
-        ?ZK_KEEPER_STATE_SASL_AUTHENTICATED -> sasl_authenticated;
-        ?ZK_KEEPER_STATE_EXPIRED -> expired
     end.
 
 code_to_atom(Code) ->

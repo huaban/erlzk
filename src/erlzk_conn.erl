@@ -175,9 +175,9 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
     {Xid, Zxid, Code, Body} = erlzk_codec:unpack(Packet),
     case Xid of
         -1 -> % watched event
-            {EventType, KeeperState, Path} = erlzk_codec:unpack(watched_event, Body, Chroot),
+            {EventType, _KeeperState, Path} = erlzk_codec:unpack(watched_event, Body, Chroot),
             {Receivers, NewWatchers} = find_and_erase_watchers(EventType, Path, Watchers),
-            send_watched_event(Receivers, {EventType, KeeperState, Path}),
+            send_watched_event(Receivers, EventType),
             {noreply, State#state{zxid=Zxid, watchers=NewWatchers}, PingIntv};
         -2 -> % ping
             {noreply, State#state{zxid=Zxid}, PingIntv};
@@ -353,8 +353,6 @@ get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
         _             -> {1, DataWatchers} % just in case, shouldn't be here
     end.
 
-find_and_erase_watchers(none, Path, Watchers) ->
-    find_and_erase_watchers([get_data, exists, get_children], Path, Watchers);
 find_and_erase_watchers(node_created, Path, Watchers) ->
     find_and_erase_watchers([get_data, exists], Path, Watchers);
 find_and_erase_watchers(node_deleted, Path, Watchers) ->
@@ -378,11 +376,11 @@ find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
     W = setelement(Index, Watchers, NewWatchers),
     find_and_erase_watchers(Left, Path, W, R).
 
-send_watched_event([], _WatchedEvent) ->
+send_watched_event([], _EventType) ->
     ok;
-send_watched_event([{_Time, Op, Path, Watcher}|Left], WatchedEvent) ->
-    Watcher ! {Op, Path, WatchedEvent},
-    send_watched_event(Left, WatchedEvent).
+send_watched_event([{_Time, Op, Path, Watcher}|Left], EventType) ->
+    Watcher ! {Op, Path, EventType},
+    send_watched_event(Left, EventType).
 
 get_chroot_path(P) -> get_chroot_path0(lists:reverse(P)).
 get_chroot_path0("/" ++ P) -> get_chroot_path0(P);
