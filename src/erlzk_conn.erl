@@ -124,6 +124,7 @@ init([ServerList, Timeout, Options]) ->
             add_init_auths(AuthData, NewState),
             {ok, NewState, PingIntv};
         {error, Reason} ->
+            error_logger:error_msg("Connect fail: ~p~n", [Reason]),
             {stop, Reason}
     end.
 
@@ -221,9 +222,11 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
             end
     end;
 handle_info({tcp_closed, _Port}, State=#state{host=Host, port=Port, monitor=Monitor}) ->
+    error_logger:error_msg("Connection to ~p:~p is broken, reconnect now~n", [Host, Port]),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
     reconnect(State#state{socket=undefined, host=undefined, port=undefined});
-handle_info({tcp_error, _Port, _Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor}) ->
+handle_info({tcp_error, _Port, Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor}) ->
+    error_logger:error_msg("Connection to ~p:~p meet an error, will be closed and reconnect: ~p~n", [Host, Port, Reason]),
     gen_tcp:close(Socket),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
     reconnect(State#state{socket=undefined, host=undefined, port=undefined});
@@ -235,14 +238,17 @@ handle_info(_Info, State=#state{ping_interval=PingIntv}) ->
 terminate(normal, #state{socket=Socket}) ->
     gen_tcp:send(Socket, <<1:32, -11:32>>),
     gen_tcp:close(Socket),
+    error_logger:warning_msg("Server is closed~n"),
     ok;
 terminate(shutdown, #state{socket=Socket}) ->
     gen_tcp:send(Socket, <<1:32, -11:32>>),
     gen_tcp:close(Socket),
+    error_logger:warning_msg("Server is shutdown~n"),
     ok;
-terminate(_Reason, #state{socket=Socket}) ->
+terminate(Reason, #state{socket=Socket}) ->
     gen_tcp:send(Socket, <<1:32, -11:32>>),
     gen_tcp:close(Socket),
+    error_logger:error_msg("Server is terminated: ~p~n", [Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -257,8 +263,10 @@ shuffle(L) ->
 connect([], _ProtocolVersion, _LastZxidSeen, _Timeout, _LastSessionId, _LastPassword) ->
     {error, no_available_server};
 connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword) ->
+    error_logger:info_msg("Connecting to ~p:~p~n", [Host, Port]),
     case gen_tcp:connect(Host, Port, ?ZK_SOCKET_OPTS, ?ZK_CONNECT_TIMEOUT) of
         {ok, Socket} ->
+            error_logger:info_msg("Connected ~p:~p, sending connect command~n", [Host, Port]),
             case gen_tcp:send(Socket, erlzk_codec:pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword})) of
                 ok ->
                     receive
@@ -266,22 +274,30 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
                             {ProtoVer, RealTimeOut, SessionId, Password} = erlzk_codec:unpack(connect, Packet),
                             case SessionId of
                                 0 ->
+                                    error_logger:warning_msg("Session expired, connection to ~p:~p will be closed~n", [Host, Port]),
                                     gen_tcp:close(Socket),
                                     {error, session_expired};
                                 _ ->
+                                    error_logger:info_msg("Connection to ~p:~p is established~n", [Host, Port]),
                                     {ok, #state{socket=Socket, host=Host, port=Port,
                                                 proto_ver=ProtoVer, timeout=RealTimeOut, session_id=SessionId, password=Password,
                                                 ping_interval=(RealTimeOut div 3)}}
                             end;
                         {tcp_closed, Socket} ->
+                            error_logger:error_msg("Connection to ~p:~p is closed~n", [Host, Port]),
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword);
-                        {tcp_error, Socket, _Reason} ->
+                        {tcp_error, Socket, Reason} ->
+                            error_logger:error_msg("Connection to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+                            gen_tcp:close(Socket),
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
                     end;
-                {error, _Reason} ->
+                {error, Reason} ->
+                    error_logger:error_msg("Sending connect command to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+                    gen_tcp:close(Socket),
                     connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
             end;
-        {error, _Reason} ->
+        {error, Reason} ->
+            error_logger:error_msg("Connecting to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
@@ -290,13 +306,16 @@ reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
                        xid=Xid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
+            error_logger:warning_msg("Reconnect to ~p:~p successful~n", [Host, Port]),
             RenewState = NewState#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
                                         xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers},
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, session_expired} ->
+            error_logger:warning_msg("Session expired, creating new connection now"),
             reconnect_after_session_expired(State);
-        {error, _Reason} ->
+        {error, Reason} ->
+            error_logger:error_msg("Connect fail: ~p, will be try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
@@ -305,12 +324,14 @@ reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthD
                                              timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), 0, 0, Timeout, 0, <<0:128>>) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
+            error_logger:warning_msg("Create a new connection to ~p:~p successful~n", [Host, Port]),
             RenewState = reset_watch_return_new_state(NewState#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
                                                                      reset_watch=ResetWatch, monitor=Monitor}, Watchers),
             add_init_auths(AuthData, RenewState),
             notify_monitor_server_state(Monitor, expired, Host, Port),
             {noreply, RenewState, PingIntv};
-        {error, _Reason} ->
+        {error, Reason} ->
+            error_logger:error_msg("Connect fail: ~p, will be try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
