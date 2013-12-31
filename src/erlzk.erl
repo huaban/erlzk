@@ -1,3 +1,4 @@
+%% @doc Convenience API to connect / disconnect to and to communicate with ZooKeeper.
 -module(erlzk).
 
 -include("erlzk.hrl").
@@ -9,38 +10,84 @@
          create2/2, create2/3, create2/4, create2/5, add_auth/3]).
 -export([generate_digest/2]).
 
+-type server_list() :: [{Host::nonempty_string(), Port::pos_integer()}].
+-type options()     :: [{chroot, nonempty_string()} |
+                        {disable_watch_auto_reset, true | false} |
+                        {auth_data, [{Scheme::nonempty_string(), Id::binary()}]} |
+                        {monitor, pid()}].
+-type acl()         :: {[perms()], scheme(), id()}.
+-type perms()       :: r | w | c | d | a.
+-type scheme()      :: nonempty_string().
+-type id()          :: string().
+-type create_mode() :: persistent | p | ephemeral | e | persistent_sequential | ps | ephemeral_sequential | es.
+
 %% ===================================================================
 %% Initiate Functions
 %% ===================================================================
+%% @doc Start the application.
+-spec start() -> ok | {error, term()}.
 start() ->
     application:load(erlzk),
     erlzk_app:ensure_deps_started(),
     application:start(erlzk).
 
+%% @doc Stop the application.
+-spec stop() -> ok | {error, term()}.
 stop() ->
     application:stop(erlzk).
 
+%% @doc Connect to ZooKeeper.
+%% @see connect/4
+-spec connect(server_list(), pos_integer()) -> {ok, pid()} | {error, atom()}.
 connect(ServerList, Timeout) ->
     connect(ServerList, Timeout, []).
 
+%% @doc Connect to ZooKeeper.
+%% @see connect/4
+-spec connect(server_list(), pos_integer(), options()) -> {ok, pid()} | {error, atom()};
+             ({local, Name::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()},
+              server_list(), pos_integer()) -> {ok, pid()} | {error, atom()}.
 connect(ServerList, Timeout, Options) when is_list(Options) ->
     erlzk_conn_sup:start_conn([ServerList, Timeout, Options]);
-
 connect(ServerName, ServerList, Timeout) when is_integer(Timeout) ->
     connect(ServerName, ServerList, Timeout, []).
 
+%% @doc Connect to ZooKeeper.
+%%
+%% Timeout in milliseconds, Options contains:
+%%
+%% <em>chroot</em>: specify a node under which erlzk will operate on
+%%
+%% <em>disable_watch_auto_reset</em>: whether disable reset watches after the connection timeout, default is false
+%%
+%% <em>auth_data</em>: the auths need to be added after connected
+%%
+%% <em>monitor</em>: a process receiving the message of connection state changing
+-spec connect({local, Name::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()},
+              server_list(), pos_integer(), options()) -> {ok, pid()} | {error, atom()}.
 connect(ServerName, ServerList, Timeout, Options) ->
     erlzk_conn_sup:start_conn([ServerName, ServerList, Timeout, Options]).
 
+%% @doc Disconnect to ZooKeeper.
+-spec close(pid()) -> ok.
 close(Pid) ->
     erlzk_conn:stop(Pid).
 
 %% ===================================================================
 %% ZooKeeper API
 %% ===================================================================
+%% @doc Create a node with the given path, return the actual path of the node.
+%% @see create/5
+-spec create(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 create(Pid, Path) ->
     create(Pid, Path, <<>>).
 
+%% @doc Create a node with the given path, return the actual path of the node.
+%% @see create/5
+-spec create(pid(), nonempty_string(), binary())      -> {ok, Path::nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), acl())         -> {ok, Path::nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), [acl()])       -> {ok, Path::nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), create_mode()) -> {ok, nonempty_string()} | {error, atom()}.
 create(Pid, Path, Data) when is_binary(Data) ->
     create(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent);
 create(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
@@ -48,6 +95,13 @@ create(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
 create(Pid, Path, CreateMode) when is_atom(CreateMode) ->
     create(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode).
 
+%% @doc Create a node with the given path, return the actual path of the node.
+%% @see create/5
+-spec create(pid(), nonempty_string(), binary(), acl())         -> {ok, Path::nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), binary(), [acl()])       -> {ok, Path::nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), binary(), create_mode()) -> {ok, nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), acl(), create_mode())    -> {ok, nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), [acl()], create_mode())  -> {ok, nonempty_string()} | {error, atom()}.
 create(Pid, Path, Data, Acl) when is_binary(Data) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
     create(Pid, Path, Data, Acl, persistent);
 create(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(CreateMode) ->
@@ -55,66 +109,213 @@ create(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(CreateM
 create(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) andalso is_atom(CreateMode) ->
     create(Pid, Path, <<>>, Acl, CreateMode).
 
+%% @doc Create a node with the given path, return the actual path of the node.
+%%
+%% Create a node with the given path in ZooKeeper, node data will be the given Data,
+%% node acl will be the given acl, and create mode affect the creation of node.
+%% An ephemeral node will be removed by the ZooKeeper automatically when the
+%% connection associated with the creation of the node expires.
+%%
+%% The create mode can also specify to create a sequential node.
+%% The actual path name of a sequential node will be the given path plus a
+%% suffix "i" where i is the current sequential number of the node.
+%% The sequence number is always fixed length of 10 digits, 0 padded.
+%% Once such a node is created, the sequential number will be incremented by one.
+%%
+%% If the path is not start with "/" or end with "/" or contains illegal characters,
+%% will return {error, bad_arguments}.
+%%
+%% {error, node_exists} will be returned if a node with the same actual path already exists.
+%%
+%% {error, no_node} will be returned if the parent node does not exist.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% {error, invalid_acl} will be returned if the acl is empty or invalid.
+%%
+%% {error, no_children_for_ephemerals} will be returned if the parent node of the given
+%% path is ephemeral, because an ephemeral node can't have children.
+%%
+%% If the call is successful, will trigger all the watches left on the
+%% node of the given path by {@link exists/3} and {@link get_data/3},
+%% and the watches left on the parent node by {@link get_children/3}.
+-spec create(pid(), nonempty_string(), binary(), acl(), create_mode())   -> {ok, nonempty_string()} | {error, atom()};
+            (pid(), nonempty_string(), binary(), [acl()], create_mode()) -> {ok, nonempty_string()} | {error, atom()}.
 create(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
     create(Pid, Path, Data, [Acl], CreateMode);
 create(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
     erlzk_conn:create(Pid, Path, Data, Acl, CreateMode).
 
+%% @doc Delete the node with the given path.
+%% @see delete/3
+-spec delete(pid(), nonempty_string()) -> {ok} | {error, atom()}.
 delete(Pid, Path) ->
     delete(Pid, Path, -1).
 
+%% @doc Delete the node with the given path.
+%%
+%% The call will succeed if such a node exists, and the given version matches the node's version
+%% (if the given version is -1, it matches any node's versions).
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, bad_version} will be returned if the given version does not match the node's version.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% {error, not_empty} will be returned if the node has children.
+%%
+%% If the call is successful, will trigger all the watches left on the node of 
+%% the given path by {@link exists/3} and {@link get_data/3} and {@link get_children/3},
+%% and the watches left on the parent node by {@link get_children/3}.
+-spec delete(pid(), nonempty_string(), integer()) -> {ok} | {error, atom()}.
 delete(Pid, Path, Version) ->
     erlzk_conn:delete(Pid, Path, Version).
 
+%% @doc Checks the existence of the node of the given path, return the stat of the node.
+%% @see exists/3
+-spec exists(pid(), nonempty_string()) -> {ok, #stat{}} | {error, atom()}.
 exists(Pid, Path) ->
     erlzk_conn:exists(Pid, Path, false).
 
+%% @doc Checks the existence of the node of the given path, return the stat of the node.
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% If the call is successful, a watch will be left on the node with the given path.
+%% The watch will be triggered by a successful operation that {@link set_data/4} on the node,
+%% or {@link create/5} / {@link delete/3} the node.
+-spec exists(pid(), nonempty_string(), pid()) -> {ok, #stat{}} | {error, atom()}.
 exists(Pid, Path, Watcher) ->
     erlzk_conn:exists(Pid, Path, true, Watcher).
 
+%% @doc Return the data and the stat of the node of the given path.
+%% @see get_data/3
+-spec get_data(pid(), nonempty_string()) -> {ok, {binary(), #stat{}}} | {error, atom()}.
 get_data(Pid, Path) ->
     erlzk_conn:get_data(Pid, Path, false).
 
+%% @doc Return the data and the stat of the node of the given path.
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% If the call is successful, a watch will be left on the node with the given path.
+%% The watch will be triggered by a successful operation that {@link set_data/4} on the node,
+%% or {@link create/5} / {@link delete/3} the node.
+-spec get_data(pid(), nonempty_string(), pid()) -> {ok, {binary(), #stat{}}} | {error, atom()}.
 get_data(Pid, Path, Watcher) ->
     erlzk_conn:get_data(Pid, Path, true, Watcher).
 
+%% @doc Set the data for the node of the given path, return the stat of the node.
+%% @see set_data/4
+-spec set_data(pid(), nonempty_string(), binary()) -> {ok, #stat{}} | {error, atom()}.
 set_data(Pid, Path, Data) ->
     set_data(Pid, Path, Data, -1).
 
+%% @doc Set the data for the node of the given path, return the stat of the node.
+%%
+%% The call will succeed if such a node exists, and the given version matches the node's version
+%% (if the given version is -1, it matches any node's versions).
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, bad_version} will be returned if the given version does not match the node's version.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% If the call is successful, will trigger all the watches on the node of the given path
+%% left by {@link exists/3} and {@link get_data/3} calls.
+-spec set_data(pid(), nonempty_string(), binary(), integer()) -> {ok, #stat{}} | {error, atom()}.
 set_data(Pid, Path, Data, Version) when is_list(Data) ->
     set_data(Pid, Path, list_to_binary(Data), Version);
 set_data(Pid, Path, Data, Version) when is_binary(Data) ->
     erlzk_conn:set_data(Pid, Path, Data, Version).
 
+%% @doc Get the ACL of the node of the given path, return the ACL and the stat of the node.
+%%
+%% {error, no_node} will be returned if the node does not exist.
+-spec get_acl(pid(), nonempty_string()) -> {ok, {[acl()], #stat{}}} | {error, atom()}.
 get_acl(Pid, Path) ->
     erlzk_conn:get_acl(Pid, Path).
 
+%% @doc Set the ACL of the node of the given path, return the ACL and the stat of the node.
+%% @see set_acl/4
+-spec set_acl(pid(), nonempty_string(), acl())   -> {ok, #stat{}} | {error, atom()};
+             (pid(), nonempty_string(), [acl()]) -> {ok, #stat{}} | {error, atom()}.
 set_acl(Pid, Path, Acl) ->
     set_acl(Pid, Path, Acl, -1).
 
+%% @doc Set the ACL of the node of the given path, return the ACL and the stat of the node.
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, bad_version} will be returned if the given version does not match the node's version.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% If the acl is empty or invalid, will return {error, invalid_acl}.
+-spec set_acl(pid(), nonempty_string(), acl(), integer())   -> {ok, #stat{}} | {error, atom()};
+             (pid(), nonempty_string(), [acl()], integer()) -> {ok, #stat{}} | {error, atom()}.
 set_acl(Pid, Path, Acl, Version) when is_tuple(Acl) ->
     set_acl(Pid, Path, [Acl], Version);
 set_acl(Pid, Path, Acl, Version) when is_list(Acl) ->
     erlzk_conn:set_acl(Pid, Path, Acl, Version).
 
+%% @doc Return the list of the children of the node of the given path.
+%% @see get_children/3
+-spec get_children(pid(), nonempty_string()) -> {ok, [nonempty_string()]} | {error, atom()}.
 get_children(Pid, Path) ->
     erlzk_conn:get_children(Pid, Path, false).
 
+%% @doc Return the list of the children of the node of the given path.
+%%
+%% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, no_auth} will be returned if no authority.
+%%
+%% If the call is successful, a watch will be left on the node with the given path.
+%% The watch will be triggered by a successful operation that {@link delete/3} the node of the given path
+%% or {@link create/5} / {@link delete/3} a child under the node.
+%%
+%% The list of children returned is not sorted and no guarantee is provided
+%% as to its natural or lexical order.
+-spec get_children(pid(), nonempty_string(), pid()) -> {ok, [nonempty_string()]} | {error, atom()}.
 get_children(Pid, Path, Watcher) ->
     erlzk_conn:get_children(Pid, Path, true, Watcher).
 
+%% @doc Flushes channel between process and leader.
+%%
+%% If it is important that multiple client read the same value, call this function before read.
+-spec sync(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 sync(Pid, Path) ->
     erlzk_conn:sync(Pid, Path).
 
+%% @doc Return the list of the children and the stat of the node of the given path.
+%% @see get_children/3
+-spec get_children2(pid(), nonempty_string()) -> {ok, {[nonempty_string()], #stat{}}} | {error, atom()}.
 get_children2(Pid, Path) ->
     erlzk_conn:get_children2(Pid, Path, false).
 
+%% @doc Return the list of the children and the stat of the node of the given path.
+%% @see get_children/3
+-spec get_children2(pid(), nonempty_string(), pid()) -> {ok, {[nonempty_string()], #stat{}}} | {error, atom()}.
 get_children2(Pid, Path, Watcher) ->
     erlzk_conn:get_children2(Pid, Path, true, Watcher).
 
+%% @doc Create a node with the given path, return the actual path and the stat of the node.
+%% @see create/5
+-spec create2(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 create2(Pid, Path) ->
     create2(Pid, Path, <<>>).
 
+%% @doc Create a node with the given path, return the actual path and the stat of the node.
+%% @see create/5
+-spec create2(pid(), nonempty_string(), binary())      -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), acl())         -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), [acl()])       -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), create_mode()) -> {ok, {nonempty_string(), #stat{}}} | {error, atom()}.
 create2(Pid, Path, Data) when is_binary(Data) ->
     create2(Pid, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent);
 create2(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
@@ -122,6 +323,13 @@ create2(Pid, Path, Acl) when is_tuple(Acl) orelse is_list(Acl) ->
 create2(Pid, Path, CreateMode) when is_atom(CreateMode) ->
     create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode).
 
+%% @doc Create a node with the given path, return the actual path and the stat of the node.
+%% @see create/5
+-spec create2(pid(), nonempty_string(), binary(), acl())         -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), binary(), [acl()])       -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), binary(), create_mode()) -> {ok, {nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), acl(), create_mode())    -> {ok, {nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), [acl()], create_mode())  -> {ok, {nonempty_string(), #stat{}}} | {error, atom()}.
 create2(Pid, Path, Data, Acl) when is_binary(Data) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
     create2(Pid, Path, Data, Acl, persistent);
 create2(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(CreateMode) ->
@@ -129,11 +337,24 @@ create2(Pid, Path, Data, CreateMode) when is_binary(Data) andalso is_atom(Create
 create2(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) andalso is_atom(CreateMode) ->
     create2(Pid, Path, <<>>, Acl, CreateMode).
 
+%% @doc Create a node with the given path, return the actual path and the stat of the node.
+%% @see create/5
+-spec create2(pid(), nonempty_string(), binary(), acl(), create_mode())   -> {ok, {nonempty_string(), #stat{}}} | {error, atom()};
+             (pid(), nonempty_string(), binary(), [acl()], create_mode()) -> {ok, {nonempty_string(), #stat{}}} | {error, atom()}.
 create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
     create2(Pid, Path, Data, [Acl], CreateMode);
 create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
     erlzk_conn:create2(Pid, Path, Data, Acl, CreateMode).
 
+%% @doc Add the specified scheme and auth information to this connection.
+%%
+%% If using <em>digest</em> scheme, the auth information is the username:password in binary,
+%% or username and password in clear text directly.
+%%
+%% If using <em>ip</em> scheme, the auth information is the form addr/bits where the most significant bits of addr are
+%% matched against the most significant bits of the client host IP.
+-spec add_auth(pid(), nonempty_string(), nonempty_string()) -> {ok} | {error, atom()};
+              (pid(), nonempty_string(), binary())          -> {ok} | {error, atom()}.
 add_auth(Pid, Username, Password) when is_list(Password) ->
     Auth = list_to_binary(Username ++ ":" ++ Password),
     add_auth(Pid, "digest", Auth);
@@ -143,6 +364,8 @@ add_auth(Pid, Scheme, Auth) when is_binary(Auth) ->
 %% ===================================================================
 %% Helper Functions
 %% ===================================================================
+%% @doc Generate Username:base64 encoded SHA1 Password digest string
+-spec generate_digest(nonempty_string(), nonempty_string()) -> nonempty_string().
 generate_digest(Username, Password) ->
     Auth = list_to_binary(Username ++ ":" ++ Password),
     Sha1 = crypto:hash(sha, Auth),
