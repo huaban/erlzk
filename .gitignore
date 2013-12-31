@@ -1,5 +1,9 @@
 .eunit/*
 deps/*
+doc/*.css
+doc/*.html
+doc/*.png
+doc/edoc-info
 ebin/*
 priv/*
 *.o
