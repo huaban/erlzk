@@ -243,8 +243,6 @@ set_data(Pid, Path, Data) ->
 %% If the call is successful, will trigger all the watches on the node of the given path
 %% left by {@link exists/3} and {@link get_data/3} calls.
 -spec set_data(pid(), nonempty_string(), binary(), integer()) -> {ok, #stat{}} | {error, atom()}.
-set_data(Pid, Path, Data, Version) when is_list(Data) ->
-    set_data(Pid, Path, list_to_binary(Data), Version);
 set_data(Pid, Path, Data, Version) when is_binary(Data) ->
     erlzk_conn:set_data(Pid, Path, Data, Version).
 
