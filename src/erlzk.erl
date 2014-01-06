@@ -22,8 +22,8 @@
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
-         create2/2, create2/3, create2/4, create2/5, add_auth/3]).
--export([generate_digest/2]).
+         multi/2, create2/2, create2/3, create2/4, create2/5, add_auth/3]).
+-export([generate_digest/2, op/1]).
 
 -type server_list() :: [{Host::nonempty_string(), Port::pos_integer()}].
 -type options()     :: [{chroot, nonempty_string()} |
@@ -35,6 +35,11 @@
 -type scheme()      :: nonempty_string().
 -type id()          :: string().
 -type create_mode() :: persistent | p | ephemeral | e | persistent_sequential | ps | ephemeral_sequential | es.
+-type op()          :: {create, nonempty_string(), binary(), [acl()], create_mode()} |
+                       {delete, nonempty_string(), integer()} |
+                       {set_data, nonempty_string(), binary(), integer()} |
+                       {check, nonempty_string(), integer()}.
+-type op_result()   :: {create, nonempty_string()} | {delete} | {set_data, #stat{}} | {check} | {error, atom()}.
 
 %% ===================================================================
 %% Initiate Functions
@@ -95,7 +100,7 @@ close(Pid) ->
 %% @see create/5
 -spec create(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 create(Pid, Path) ->
-    create(Pid, Path, <<>>).
+    create(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent).
 
 %% @doc Create a node with the given path, return the actual path of the node.
 %% @see create/5
@@ -317,11 +322,22 @@ get_children2(Pid, Path) ->
 get_children2(Pid, Path, Watcher) ->
     erlzk_conn:get_children2(Pid, Path, true, Watcher).
 
+%% @doc Executes multiple ZooKeeper operations or none of them.
+%%
+%% Use {@link op/1} to constructe operations.
+%%
+%% On success, a list of results is returned.
+%%
+%% On failure, a tuple contains first error code and a list of results is returned.
+-spec multi(pid(), [op()]) -> {ok, [op_result()]} | {error, {atom(), [op_result()]}}.
+multi(Pid, Ops) ->
+    erlzk_conn:multi(Pid, Ops).
+
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
 %% @see create/5
 -spec create2(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 create2(Pid, Path) ->
-    create2(Pid, Path, <<>>).
+    create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent).
 
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
 %% @see create/5
@@ -384,3 +400,51 @@ generate_digest(Username, Password) ->
     Sha1 = crypto:hash(sha, Auth),
     Base64 = base64:encode(Sha1),
     Username ++ ":" ++ binary_to_list(Base64).
+
+%% @doc Construtes a single operation in a multi-operation transaction.
+%%
+%% Each operation can be a <em>create</em>, <em>set_data</em> or <em>delete</em> or can just be a version <em>check</em>.
+%%
+%% Accept a tuple as parameters, including a operation atom and args, the format of the args is the
+%% same as the function of the corresponding operation, except no pid.
+%%
+%% <em>check</em> accept the Path of a node (nonempty_string()) and the Version of the node (non_neg_integer())
+%%
+%% @see create/2
+%% @see create/3
+%% @see create/4
+%% @see create/5
+%% @see delete/2
+%% @see delete/3
+%% @see set_data/3
+%% @see set_data/4
+op({create, Path}) ->
+    {create, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent};
+op({create, Path, Data}) when is_binary(Data) ->
+    {create, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent};
+op({create, Path, Acl}) when is_tuple(Acl) orelse is_list(Acl) ->
+    {create, Path, <<>>, Acl, persistent};
+op({create, Path, CreateMode}) when is_atom(CreateMode) ->
+    {create, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode};
+op({create, Path, Data, Acl}) when is_binary(Data) andalso (is_tuple(Acl) orelse is_list(Acl)) ->
+    {create, Path, Data, Acl, persistent};
+op({create, Path, Data, CreateMode}) when is_binary(Data) andalso is_atom(CreateMode) ->
+    {create, Path, Data, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode};
+op({create, Path, Acl, CreateMode}) when (is_tuple(Acl) orelse is_list(Acl)) andalso is_atom(CreateMode) ->
+    {create, Path, <<>>, Acl, CreateMode};
+op({create, Path, Data, Acl, CreateMode}) when is_binary(Data) andalso is_tuple(Acl) andalso is_atom(CreateMode) ->
+    {create, Path, Data, [Acl], CreateMode};
+op({create, Path, Data, Acl, CreateMode}) when is_binary(Data) andalso is_list(Acl) andalso is_atom(CreateMode) ->
+    {create, Path, Data, Acl, CreateMode};
+op({delete, Path}) ->
+    {delete, Path, -1};
+op({delete, Path, Version}) ->
+    {delete, Path, Version};
+op({set_data, Path, Data}) ->
+    {set_data, Path, Data, -1};
+op({set_data, Path, Data, Version}) when is_list(Data) ->
+    {set_data, Path, list_to_binary(Data), Version};
+op({set_data, Path, Data, Version}) when is_binary(Data) ->
+    {set_data, Path, Data, Version};
+op({check, Path, Version}) ->
+    {check, Path, Version}.

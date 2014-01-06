@@ -16,6 +16,7 @@ erlzk_test_() ->
                               fun get_acl/1,
                               fun set_acl/1,
                               fun get_children/1,
+                              fun multi/1,
                               fun auth_data/1,
                               fun chroot/1,
                               fun watch/1]]}.
@@ -276,6 +277,41 @@ get_children({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertMatch({ok}, erlzk:delete(P, "/b/c")),
     ?assertMatch({ok}, erlzk:delete(P, "/b")),
     erlzk:close(P),
+    ok.
+
+multi({ServerList, Timeout, _Chroot, _AuthData}) ->
+    erlzk:start(),
+    {ok, Pid} = erlzk:connect(ServerList, Timeout),
+
+    ?assertMatch({error, {bad_version,[{error,ok},{error,bad_version},{error,runtime_inconsistency}]}},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({check, "/a", 1}),erlzk:op({delete, "/a", 0})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({error, {bad_version,[{error,ok},{error,ok},{error,bad_version}]}},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({check, "/a", 0}),erlzk:op({delete, "/a", 1})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({ok, [{create,"/a"},{check},{delete}]},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({check, "/a", 0}),erlzk:op({delete, "/a", 0})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({error, {bad_version,[{error,ok},{error,ok},{error,bad_version},{error,runtime_inconsistency}]}},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({check, "/a", 0}),erlzk:op({set_data, "/a", <<"a">>, 1}),erlzk:op({delete, "/a", 1})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({ok, [{create,"/a"},{check},{set_data,_Stat},{delete}]},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({check, "/a", 0}),erlzk:op({set_data, "/a", <<"a">>, 0}),erlzk:op({delete, "/a", 1})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({error, {not_empty,[{error,ok},{error,ok},{error,not_empty}]}},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({create, "/a/b"}),erlzk:op({delete, "/a"})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    ?assertMatch({ok, [{create,"/a"},{create,"/a/b"},{delete},{delete}]},
+                 erlzk:multi(Pid, [erlzk:op({create, "/a"}),erlzk:op({create, "/a/b"}),erlzk:op({delete, "/a/b"}),erlzk:op({delete, "/a"})])),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a")),
+
+    erlzk:close(Pid),
     ok.
 
 auth_data({ServerList, Timeout, _Chroot, AuthData}) ->

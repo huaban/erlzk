@@ -21,7 +21,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([create/5, delete/3, exists/3, exists/4, get_data/3, get_data/4, set_data/4, get_acl/2, set_acl/4,
          get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4,
-         create2/5, add_auth/3]).
+         multi/2, create2/5, add_auth/3]).
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}]).
 -define(ZK_CONNECT_TIMEOUT, 10000).
@@ -107,6 +107,9 @@ get_children2(Pid, Path, Watch) ->
 
 get_children2(Pid, Path, Watch, Watcher) ->
     gen_server:call(Pid, {get_children2, {Path, Watch}, Watcher}).
+
+multi(Pid, Ops) ->
+    gen_server:call(Pid, {multi, Ops}).
 
 create2(Pid, Path, Data, Acl, CreateMode) ->
     gen_server:call(Pid, {create2, {Path, Data, Acl, CreateMode}}).
@@ -224,7 +227,17 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
                             if size(Body) =:= 0 ->
                                 {ok};
                                true ->
-                                {ok, erlzk_codec:unpack(Op, Body, Chroot)}
+                                Result = erlzk_codec:unpack(Op, Body, Chroot),
+                                if Op =:= multi -> % multi reply
+                                    case Result of
+                                        {ok, _} ->
+                                            Result;
+                                        _ ->
+                                            {error, Result}
+                                    end;
+                                   Op =/= multi ->
+                                    {ok, Result}
+                                end
                             end;
                         _  ->
                             {error, Code}

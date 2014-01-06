@@ -145,6 +145,10 @@ pack(get_children2, {Path, Watch}, Xid, Chroot) ->
     Packet = <<(pack_str(chroot(Path, Chroot)))/binary, Watch:8>>,
     wrap_packet(?ZK_OP_GET_CHILDREN2, Xid, Packet);
 
+pack(multi, Ops, Xid, Chroot) ->
+    Packet = pack_ops(Ops, Chroot),
+    wrap_packet(?ZK_OP_MULTI, Xid, Packet);
+
 pack(create2, {Path, Data, Acl, CreateMode}, Xid, Chroot) ->
     Packet = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
     wrap_packet(?ZK_OP_CREATE2, Xid, Packet).
@@ -163,21 +167,25 @@ unpack(create, Packet, Chroot) ->
     unchroot(Path, Chroot);
 
 unpack(exists, Packet, _Chroot) ->
-    unpack_stat(Packet);
+    {Stat, _} = unpack_stat(Packet),
+    Stat;
 
 unpack(get_data, Packet, _Chroot) ->
     {Data, Left} = unpack_bytes(Packet),
-    {Data, unpack_stat(Left)};
+    {Stat, _} = unpack_stat(Left),
+    {Data, Stat};
 
 unpack(set_data, Packet, _Chroot) ->
-    unpack_stat(Packet);
+    {Stat, _} = unpack_stat(Packet),
+    Stat;
 
 unpack(get_acl, Packet, _Chroot) ->
     {Acl, Left} = unpack_acl(Packet),
     {Acl, unpack_stat(Left)};
 
 unpack(set_acl, Packet, _Chroot) ->
-    unpack_stat(Packet);
+    {Stat, _} = unpack_stat(Packet),
+    Stat;
 
 unpack(get_children, Packet, _Chroot) ->
     {Children, _} = unpack_strs(Packet),
@@ -189,11 +197,16 @@ unpack(sync, Packet, Chroot) ->
 
 unpack(get_children2, Packet, _Chroot) ->
     {Children, Left} = unpack_strs(Packet),
-    {Children, unpack_stat(Left)};
+    {Stat, _} = unpack_stat(Left),
+    {Children, Stat};
+
+unpack(multi, Packet, Chroot) ->
+    unpack_ops(Packet, Chroot);
 
 unpack(create2, Packet, Chroot) ->
     {Path, Left} = unpack_str(Packet),
-    {unchroot(Path, Chroot), unpack_stat(Left)};
+    {Stat, _} = unpack_stat(Left),
+    {unchroot(Path, Chroot), Stat};
 
 unpack(watched_event, Packet, Chroot) ->
     <<Type:32/signed, State:32/signed, Left/binary>> = Packet,
@@ -283,6 +296,37 @@ pack_watches([Watch|Left], Packet, Size) ->
     NewPacket = <<Packet/binary, (pack_str(Watch))/binary>>,
     pack_watches(Left, NewPacket, Size + 1).
 
+pack_ops(Ops, Chroot) ->
+    pack_ops(Ops, <<>>, Chroot).
+
+pack_ops([], Packet, _Chroot) ->
+    <<Packet/binary, (pack_multi_header(-1, true))/binary>>;
+pack_ops([{create, Path, Data, Acl, CreateMode}|Left], Packet, Chroot) ->
+    MultiHeaderPacket = pack_multi_header(?ZK_OP_CREATE, false),
+    OpPacket = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, (pack_acl(Acl))/binary, (pack_create_mode(CreateMode))/binary>>,
+    NewPacket = <<Packet/binary, MultiHeaderPacket/binary, OpPacket/binary>>,
+    pack_ops(Left, NewPacket, Chroot);
+pack_ops([{delete, Path, Version}|Left], Packet, Chroot) ->
+    MultiHeaderPacket = pack_multi_header(?ZK_OP_DELETE, false),
+    OpPacket = <<(pack_str(chroot(Path, Chroot)))/binary, Version:32/signed>>,
+    NewPacket = <<Packet/binary, MultiHeaderPacket/binary, OpPacket/binary>>,
+    pack_ops(Left, NewPacket, Chroot);
+pack_ops([{set_data, Path, Data, Version}|Left], Packet, Chroot) ->
+    MultiHeaderPacket = pack_multi_header(?ZK_OP_SET_DATA, false),
+    OpPacket = <<(pack_str(chroot(Path, Chroot)))/binary, (pack_bytes(Data))/binary, Version:32/signed>>,
+    NewPacket = <<Packet/binary, MultiHeaderPacket/binary, OpPacket/binary>>,
+    pack_ops(Left, NewPacket, Chroot);
+pack_ops([{check, Path, Version}|Left], Packet, Chroot) ->
+    MultiHeaderPacket = pack_multi_header(?ZK_OP_CHECK, false),
+    OpPacket = <<(pack_str(chroot(Path, Chroot)))/binary, Version:32/signed>>,
+    NewPacket = <<Packet/binary, MultiHeaderPacket/binary, OpPacket/binary>>,
+    pack_ops(Left, NewPacket, Chroot).
+
+pack_multi_header(Type, true) ->
+    <<Type:32/signed, 1:8, -1:32/signed>>;
+pack_multi_header(Type, false) ->
+    <<Type:32/signed, 0:8, -1:32/signed>>.
+
 wrap_packet(Type, Xid, Packet) ->
     <<Xid:32/signed, Type:32, Packet/binary>>.
 
@@ -340,8 +384,8 @@ unpack_perms(PermsValue, [V,P|Left], Perms) ->
     unpack_perms(PermsValue, Left, NewPerms).
 
 unpack_stat(Packet) ->
-    <<Czxid:64, Mzxid:64, Ctime:64, Mtime:64, Version:32, Cversion:32, Aversion:32, EphemeralOwner:64, DataLength:32, NumChildren:32, Pzxid:64>> = Packet,
-    #stat{czxid = Czxid,
+    <<Czxid:64, Mzxid:64, Ctime:64, Mtime:64, Version:32, Cversion:32, Aversion:32, EphemeralOwner:64, DataLength:32, NumChildren:32, Pzxid:64, Left/binary>> = Packet,
+    Stat = #stat{czxid = Czxid,
         mzxid = Mzxid,
         ctime = Ctime,
         mtime = Mtime,
@@ -351,7 +395,42 @@ unpack_stat(Packet) ->
         ephemeral_owner = EphemeralOwner,
         data_length = DataLength,
         num_children = NumChildren,
-        pzxid = Pzxid}.
+        pzxid = Pzxid},
+    {Stat, Left}.
+
+unpack_ops(Packet, Chroot) ->
+    {Code, Ops} = unpack_ops(ok, [], Packet, Chroot),
+    {Code, lists:reverse(Ops)}.
+
+unpack_ops(?ZK_OP_CREATE, Packet, Chroot) ->
+    {Path, Left} = unpack_str(Packet),
+    {{create, unchroot(Path, Chroot)}, Left};
+unpack_ops(?ZK_OP_DELETE, Packet, _Chroot) ->
+    {{delete}, Packet};
+unpack_ops(?ZK_OP_SET_DATA, Packet, _Chroot) ->
+    {Stat, Left} = unpack_stat(Packet),
+    {{set_data, Stat}, Left};
+unpack_ops(?ZK_OP_CHECK, Packet, _Chroot) ->
+    {{check}, Packet};
+unpack_ops(?ZK_OP_ERROR, Packet, _Chroot) ->
+    <<Err:32/signed, Left/binary>> = Packet,
+    {{error, code_to_atom(Err)}, Left}.
+
+unpack_ops(Code, Ops, Packet, Chroot) ->
+    <<Type:32/signed, Done:8, Err:32/signed, Left/binary>> = Packet,
+    if Done =:= 0 ->
+        {Op, NewPacket} = unpack_ops(Type, Left, Chroot),
+        unpack_ops(multi_code(Code, code_to_atom(Err)), [Op|Ops], NewPacket, Chroot);
+       true ->
+        {Code, Ops}
+    end.
+
+multi_code(Code, ErrCode) ->
+    if Code =:= ok ->
+        ErrCode;
+       Code =/= ok ->
+        Code
+    end.
 
 event_type_to_atom(Type) ->
     case Type of
