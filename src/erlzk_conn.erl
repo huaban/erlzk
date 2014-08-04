@@ -1,12 +1,12 @@
 %% 2013-2014 (c) Mega Yu <yuhg2310@gmail.com>
 %% 2013-2014 (c) huaban.com <www.huaban.com>
-%% 
+%%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
 %% You may obtain a copy of the License at
-%% 
+%%
 %%    http://www.apache.org/licenses/LICENSE-2.0
-%% 
+%%
 %% Unless required by applicable law or agreed to in writing, software
 %% distributed under the License is distributed on an "AS IS" BASIS,
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -208,7 +208,7 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
             case queue:out(Auths) of
                 {{value, From}, NewAuths} ->
                     Reply = case Code of
-                        ok -> {ok};
+                        ok -> ok;
                         _  -> {error, Code}
                     end,
                     if From =/= self() -> % init auth data reply don't need to notify
@@ -225,7 +225,7 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
                     Reply = case Code of
                         ok ->
                             if size(Body) =:= 0 ->
-                                {ok};
+                                ok;
                                true ->
                                 Result = erlzk_codec:unpack(Op, Body, Chroot),
                                 if Op =:= multi -> % multi reply
@@ -279,7 +279,7 @@ terminate(Reason, #state{socket=Socket}) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
-    {ok, State}. 
+    {ok, State}.
 
 %% ===================================================================
 %% Internal Functions

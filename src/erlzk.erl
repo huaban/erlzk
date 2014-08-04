@@ -1,12 +1,12 @@
 %% 2013-2014 (c) Mega Yu <yuhg2310@gmail.com>
 %% 2013-2014 (c) huaban.com <www.huaban.com>
-%% 
+%%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
 %% You may obtain a copy of the License at
-%% 
+%%
 %%    http://www.apache.org/licenses/LICENSE-2.0
-%% 
+%%
 %% Unless required by applicable law or agreed to in writing, software
 %% distributed under the License is distributed on an "AS IS" BASIS,
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -168,7 +168,7 @@ create(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(Ac
 
 %% @doc Delete the node with the given path.
 %% @see delete/3
--spec delete(pid(), nonempty_string()) -> {ok} | {error, atom()}.
+-spec delete(pid(), nonempty_string()) -> ok | {error, atom()}.
 delete(Pid, Path) ->
     delete(Pid, Path, -1).
 
@@ -185,10 +185,10 @@ delete(Pid, Path) ->
 %%
 %% {error, not_empty} will be returned if the node has children.
 %%
-%% If the call is successful, will trigger all the watches left on the node of 
+%% If the call is successful, will trigger all the watches left on the node of
 %% the given path by {@link exists/3} and {@link get_data/3} and {@link get_children/3},
 %% and the watches left on the parent node by {@link get_children/3}.
--spec delete(pid(), nonempty_string(), integer()) -> {ok} | {error, atom()}.
+-spec delete(pid(), nonempty_string(), integer()) -> ok | {error, atom()}.
 delete(Pid, Path, Version) ->
     erlzk_conn:delete(Pid, Path, Version).
 
@@ -382,8 +382,8 @@ create2(Pid, Path, Data, Acl, CreateMode) when is_binary(Data) andalso is_list(A
 %%
 %% If using <em>ip</em> scheme, the auth information is the form addr/bits where the most significant bits of addr are
 %% matched against the most significant bits of the client host IP.
--spec add_auth(pid(), nonempty_string(), nonempty_string()) -> {ok} | {error, atom()};
-              (pid(), nonempty_string(), binary())          -> {ok} | {error, atom()}.
+-spec add_auth(pid(), nonempty_string(), nonempty_string()) -> ok | {error, atom()};
+              (pid(), nonempty_string(), binary())          -> ok | {error, atom()}.
 add_auth(Pid, Username, Password) when is_list(Password) ->
     Auth = list_to_binary(Username ++ ":" ++ Password),
     add_auth(Pid, "digest", Auth);
