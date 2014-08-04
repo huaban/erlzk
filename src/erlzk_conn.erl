@@ -24,8 +24,16 @@
          multi/2, create2/5, add_auth/3]).
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}]).
+-ifdef(zk_connect_timeout).
+-define(ZK_CONNECT_TIMEOUT, ?zk_connect_timeout).
+-else.
 -define(ZK_CONNECT_TIMEOUT, 10000).
+-endif.
+-ifdef(zk_reconnect_interval).
+-define(ZK_RECONNECT_INTERVAL, ?zk_reconnect_interval).
+-else.
 -define(ZK_RECONNECT_INTERVAL, 10000).
+-endif.
 
 -record(state, {
     servers = [],
