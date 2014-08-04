@@ -130,7 +130,7 @@ more details see module erlzk or test.
 {ok, {<<"b">>, _Stat}} = erlzk:get_data(Pid, "/a").
 
 % Add a auth, username is "foo", password is "bar"
-{ok} = erlzk:add_auth(Pid, "foo", "bar").
+ok = erlzk:add_auth(Pid, "foo", "bar").
 
 % Set the ACL of the node, now only the creator has all the permissions
 {ok, _Stat} = erlzk:set_acl(Pid, "/a", ?ZK_ACL_CREATOR_ALL_ACL).
@@ -146,9 +146,9 @@ more details see module erlzk or test.
 {ok, Children} = erlzk:get_children(P, "/a").
 
 % Delete the node, delete all the children before parent
-{ok} = erlzk:delete(Pid, "/a/a0000000000").
-{ok} = erlzk:delete(Pid, "/a/b").
-{ok} = erlzk:delete(Pid, "/a").
+ok = erlzk:delete(Pid, "/a/a0000000000").
+ok = erlzk:delete(Pid, "/a/b").
+ok = erlzk:delete(Pid, "/a").
 
 ```
 
