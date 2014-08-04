@@ -251,12 +251,12 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
 handle_info({tcp_closed, _Port}, State=#state{host=Host, port=Port, monitor=Monitor}) ->
     error_logger:error_msg("Connection to ~p:~p is broken, reconnect now~n", [Host, Port]),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
-    reconnect(State#state{socket=undefined, host=undefined, port=undefined});
+    reconnect(State#state{host=undefined, port=undefined});
 handle_info({tcp_error, _Port, Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor}) ->
     error_logger:error_msg("Connection to ~p:~p meet an error, will be closed and reconnect: ~p~n", [Host, Port, Reason]),
     gen_tcp:close(Socket),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
-    reconnect(State#state{socket=undefined, host=undefined, port=undefined});
+    reconnect(State#state{host=undefined, port=undefined});
 handle_info(reconnect, State) ->
     reconnect(State);
 handle_info(_Info, State=#state{ping_interval=PingIntv}) ->

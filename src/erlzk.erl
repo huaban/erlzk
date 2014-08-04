@@ -156,6 +156,8 @@ create(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) anda
 %% {error, no_children_for_ephemerals} will be returned if the parent node of the given
 %% path is ephemeral, because an ephemeral node can't have children.
 %%
+%% {error, closed} will be returned during reconnecting.
+%%
 %% If the call is successful, will trigger all the watches left on the
 %% node of the given path by {@link exists/3} and {@link get_data/3},
 %% and the watches left on the parent node by {@link get_children/3}.
@@ -185,6 +187,8 @@ delete(Pid, Path) ->
 %%
 %% {error, not_empty} will be returned if the node has children.
 %%
+%% {error, closed} will be returned during reconnecting.
+%%
 %% If the call is successful, will trigger all the watches left on the node of
 %% the given path by {@link exists/3} and {@link get_data/3} and {@link get_children/3},
 %% and the watches left on the parent node by {@link get_children/3}.
@@ -201,6 +205,8 @@ exists(Pid, Path) ->
 %% @doc Checks the existence of the node of the given path, return the stat of the node.
 %%
 %% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, closed} will be returned during reconnecting.
 %%
 %% If the call is successful, a watch will be left on the node with the given path.
 %% The watch will be triggered by a successful operation that {@link set_data/4} on the node,
@@ -220,6 +226,8 @@ get_data(Pid, Path) ->
 %% {error, no_node} will be returned if the node does not exist.
 %%
 %% {error, no_auth} will be returned if no authority.
+%%
+%% {error, closed} will be returned during reconnecting.
 %%
 %% If the call is successful, a watch will be left on the node with the given path.
 %% The watch will be triggered by a successful operation that {@link set_data/4} on the node,
@@ -245,6 +253,8 @@ set_data(Pid, Path, Data) ->
 %%
 %% {error, no_auth} will be returned if no authority.
 %%
+%% {error, closed} will be returned during reconnecting.
+%%
 %% If the call is successful, will trigger all the watches on the node of the given path
 %% left by {@link exists/3} and {@link get_data/3} calls.
 -spec set_data(pid(), nonempty_string(), binary(), integer()) -> {ok, #stat{}} | {error, atom()}.
@@ -254,6 +264,8 @@ set_data(Pid, Path, Data, Version) when is_binary(Data) ->
 %% @doc Get the ACL of the node of the given path, return the ACL and the stat of the node.
 %%
 %% {error, no_node} will be returned if the node does not exist.
+%%
+%% {error, closed} will be returned during reconnecting.
 -spec get_acl(pid(), nonempty_string()) -> {ok, {[acl()], #stat{}}} | {error, atom()}.
 get_acl(Pid, Path) ->
     erlzk_conn:get_acl(Pid, Path).
@@ -272,6 +284,8 @@ set_acl(Pid, Path, Acl) ->
 %% {error, bad_version} will be returned if the given version does not match the node's version.
 %%
 %% {error, no_auth} will be returned if no authority.
+%%
+%% {error, closed} will be returned during reconnecting.
 %%
 %% If the acl is empty or invalid, will return {error, invalid_acl}.
 -spec set_acl(pid(), nonempty_string(), acl(), integer())   -> {ok, #stat{}} | {error, atom()};
@@ -293,6 +307,8 @@ get_children(Pid, Path) ->
 %%
 %% {error, no_auth} will be returned if no authority.
 %%
+%% {error, closed} will be returned during reconnecting.
+%%
 %% If the call is successful, a watch will be left on the node with the given path.
 %% The watch will be triggered by a successful operation that {@link delete/3} the node of the given path
 %% or {@link create/5} / {@link delete/3} a child under the node.
@@ -304,6 +320,8 @@ get_children(Pid, Path, Watcher) ->
     erlzk_conn:get_children(Pid, Path, true, Watcher).
 
 %% @doc Flushes channel between process and leader.
+%%
+%% {error, closed} will be returned during reconnecting.
 %%
 %% If it is important that multiple client read the same value, call this function before read.
 -spec sync(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
@@ -328,7 +346,8 @@ get_children2(Pid, Path, Watcher) ->
 %%
 %% On success, a list of results is returned.
 %%
-%% On failure, a tuple contains first error code and a list of results is returned.
+%% On failure, a tuple contains first error code and a list of results is returned, or
+%% {error, closed} will be returned during reconnecting.
 -spec multi(pid(), [op()]) -> {ok, [op_result()]} | {error, {atom(), [op_result()]}}.
 multi(Pid, Ops) ->
     erlzk_conn:multi(Pid, Ops).
