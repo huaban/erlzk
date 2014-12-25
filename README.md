@@ -6,6 +6,9 @@
 [Zookeeper Programmers Guide](https://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html)
 before using erlzk.
 
+> ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, 
+  but it works fine in v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
+
 ## Features
 
 - Clear and concise API

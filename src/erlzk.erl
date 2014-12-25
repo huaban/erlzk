@@ -353,12 +353,20 @@ multi(Pid, Ops) ->
     erlzk_conn:multi(Pid, Ops).
 
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
+%%
+%% ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, but it works fine in
+%% v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
+%%
 %% @see create/5
 -spec create2(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
 create2(Pid, Path) ->
     create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent).
 
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
+%%
+%% ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, but it works fine in
+%% v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
+%%
 %% @see create/5
 -spec create2(pid(), nonempty_string(), binary())      -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
              (pid(), nonempty_string(), acl())         -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
@@ -372,6 +380,10 @@ create2(Pid, Path, CreateMode) when is_atom(CreateMode) ->
     create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], CreateMode).
 
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
+%%
+%% ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, but it works fine in
+%% v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
+%%
 %% @see create/5
 -spec create2(pid(), nonempty_string(), binary(), acl())         -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
              (pid(), nonempty_string(), binary(), [acl()])       -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()};
@@ -386,6 +398,10 @@ create2(Pid, Path, Acl, CreateMode) when (is_tuple(Acl) orelse is_list(Acl)) and
     create2(Pid, Path, <<>>, Acl, CreateMode).
 
 %% @doc Create a node with the given path, return the actual path and the stat of the node.
+%%
+%% ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, but it works fine in
+%% v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
+%%
 %% @see create/5
 -spec create2(pid(), nonempty_string(), binary(), acl(), create_mode())   -> {ok, {nonempty_string(), #stat{}}} | {error, atom()};
              (pid(), nonempty_string(), binary(), [acl()], create_mode()) -> {ok, {nonempty_string(), #stat{}}} | {error, atom()}.
