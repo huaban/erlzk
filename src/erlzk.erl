@@ -358,7 +358,7 @@ multi(Pid, Ops) ->
 %% v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
 %%
 %% @see create/5
--spec create2(pid(), nonempty_string()) -> {ok, Path::nonempty_string()} | {error, atom()}.
+-spec create2(pid(), nonempty_string()) -> {ok, {Path::nonempty_string(), #stat{}}} | {error, atom()}.
 create2(Pid, Path) ->
     create2(Pid, Path, <<>>, [?ZK_ACL_OPEN_ACL_UNSAFE], persistent).
 
