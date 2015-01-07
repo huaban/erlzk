@@ -202,7 +202,7 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
     case Xid of
         -1 -> % watched event
             {EventType, _KeeperState, Path} = erlzk_codec:unpack(watched_event, Body, Chroot),
-            {Receivers, NewWatchers} = find_and_erase_watchers(EventType, Path, Watchers),
+            {Receivers, NewWatchers} = find_and_erase_watchers(EventType, list_to_binary(Path), Watchers),
             send_watched_event(Receivers, EventType),
             {noreply, State#state{zxid=Zxid, watchers=NewWatchers}, PingIntv};
         -2 -> % ping
@@ -395,6 +395,8 @@ notify_monitor_server_state(Monitor, State, Host, Port) ->
             Monitor ! {State, Host, Port}
     end.
 
+store_watcher(Op, Path, Watcher, Watchers) when not is_binary(Path)->
+    store_watcher(Op, iolist_to_binary(Path), Watcher, Watchers);
 store_watcher(Op, Path, Watcher, Watchers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
     NewWatchers = dict:store(Path, {erlang:now(), Op, Path, Watcher}, DestWatcher),
