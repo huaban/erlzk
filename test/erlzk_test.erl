@@ -348,21 +348,21 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ExistCreateWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,"/a",node_created}, WatchedEvent)
+                ?assertMatch({exists,<<"/a">>,node_created}, WatchedEvent)
         end
     end),
     ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a", ExistCreateWatch)),
     GetDataCreateWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_data,"/a",node_created}, WatchedEvent)
+                ?assertMatch({get_data,<<"/a">>,node_created}, WatchedEvent)
         end
     end),
     ?assertMatch({error, no_node}, erlzk:get_data(Pid, "/a", GetDataCreateWatch)),
     GetChildCreateWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,"/",node_children_changed}, WatchedEvent)
+                ?assertMatch({get_children,<<"/">>,node_children_changed}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, ["zookeeper"]}, erlzk:get_children(Pid, "/", GetChildCreateWatch)),
@@ -377,21 +377,21 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ExistChangedWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,"/a",node_data_changed}, WatchedEvent)
+                ?assertMatch({exists,<<"/a">>,node_data_changed}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistChangedWatch)),
     GetDataChangedWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_data,"/a",node_data_changed}, WatchedEvent)
+                ?assertMatch({get_data,<<"/a">>,node_data_changed}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, {<<>>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataChangedWatch)),
     GetChildDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,"/",node_children_changed}, WatchedEvent)
+                ?assertMatch({get_children,<<"/">>,node_children_changed}, WatchedEvent)
         end
     end),
     {ok, Children} = erlzk:get_children(Pid, "/", GetChildDeleteWatch),
@@ -399,7 +399,7 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     GetChildDeleteWatch0 = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,"/a",node_deleted}, WatchedEvent)
+                ?assertMatch({get_children,<<"/a">>,node_deleted}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, []}, erlzk:get_children(Pid, "/a", GetChildDeleteWatch0)),
@@ -416,14 +416,14 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ExistDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,"/a",node_deleted}, WatchedEvent)
+                ?assertMatch({exists,<<"/a">>,node_deleted}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistDeleteWatch)),
     GetDataDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_data,"/a",node_deleted}, WatchedEvent)
+                ?assertMatch({get_data,<<"/a">>,node_deleted}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataDeleteWatch)),
