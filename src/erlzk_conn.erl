@@ -34,6 +34,11 @@
 -else.
 -define(ZK_RECONNECT_INTERVAL, 10000).
 -endif.
+-ifdef(pre18).
+-define(TIMESTAMP, erlang:now()).
+-else.
+-define(TIMESTAMP, erlang:unique_integer([monotonic])).
+-endif.
 
 -record(state, {
     servers = [],
@@ -399,7 +404,7 @@ store_watcher(Op, Path, Watcher, Watchers) when not is_binary(Path)->
     store_watcher(Op, iolist_to_binary(Path), Watcher, Watchers);
 store_watcher(Op, Path, Watcher, Watchers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
-    NewWatchers = dict:store(Path, {erlang:now(), Op, Path, Watcher}, DestWatcher),
+    NewWatchers = dict:store(Path, {?TIMESTAMP, Op, Path, Watcher}, DestWatcher),
     setelement(Index, Watchers, NewWatchers).
 
 get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
