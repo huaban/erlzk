@@ -92,7 +92,7 @@ connect(ServerName, ServerList, Timeout, Options) ->
 %%  (useful when testing session restart behaviour).
 -spec kill_session(pid()) -> ok.
 kill_session(Pid) ->
-  erlzk_conn:kill_session(Pid).
+    erlzk_conn:kill_session(Pid).
 
 %% @doc Disconnect to ZooKeeper.
 -spec close(pid()) -> ok.

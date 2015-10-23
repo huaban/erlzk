@@ -1,83 +1,54 @@
-%%%-------------------------------------------------------------------
-%%% @author kevinbombadil
-%%% @doc
-%%%   Given a callback and an interval start a timer.
-%%%   When you receive a beat, reset the timer.
-%%%   When the timer expires run the callback.
-%%%   Note:
-%%%      - We ignore a noproc exit from the callback
-%%%      - This module terminates on timeout
-%%% @end
-%%%-------------------------------------------------------------------
+%% monitor whether the ZooKeeper server is responsive
+%%
+%% close session then reconnect a new one
+%% if there is no package received from server in 2 / 3 * timeout.
+%%
+%% thanks @kevinbombadil
 -module(erlzk_heartbeat).
 
--behaviour(gen_fsm).
+-behaviour(gen_server).
 
-%% API
--export([start_link/2, beat/1]).
-
-%% gen_fsm callbacks
--export([init/1, beating/2, handle_event/3,
-         handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+-export([start/2, stop/1, beat/1]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(NOBEAT, no_beat).
 
--record(state, {callback, interval, timer}).
+-record(state, {pid, interval}).
 
-%%%===================================================================
-%%% API
-%%%===================================================================
-start_link(Callback, Interval) ->
-  gen_fsm:start_link(?MODULE, [Callback, Interval], []).
+%% ===================================================================
+%% Public API
+%% ===================================================================
+start(ConnPid, Interval) ->
+    gen_server:start(?MODULE, [ConnPid, Interval], []).
+
+stop(Pid) ->
+    gen_server:call(Pid, stop).
 
 beat(Pid) ->
-  gen_fsm:send_event(Pid, {beat}).
+    gen_server:cast(Pid, beat).
 
-%%%===================================================================
-%%% gen_fsm callbacks
-%%%===================================================================
+%% ===================================================================
+%% gen_server Callbacks
+%% ===================================================================
+init([ConnPid, Interval]) ->
+    {ok, #state{pid=ConnPid, interval=Interval}, Interval}.
 
-init([Callback, Interval]) ->
-  Timer=gen_fsm:start_timer(Interval,?NOBEAT),
-  process_flag(trap_exit, true),
+handle_call(stop, _From, State) ->
+    {stop, normal, ok, State};
+handle_call(_Request, _From, State=#state{interval=Interval}) ->
+    {reply, ok, State, Interval}.
 
-  {ok, beating, #state{callback=Callback,
-                       timer=Timer,
-                       interval=Interval}}.
-%%--------------------------------------------------------------------
+handle_cast(_Request, State=#state{interval=Interval}) ->
+    {noreply, State, Interval}.
 
-beating({beat},State=#state{interval=Interval,timer=Timer}) ->
-%  error_logger:info_msg("Heartbeat: beat~n"),
-  gen_fsm:cancel_timer(Timer),
-  Timer1 = gen_fsm:start_timer(Interval,{?NOBEAT}),
-  {next_state, beating, State#state{timer=Timer1}};
+handle_info(timeout, State=#state{pid=Pid}) ->
+    erlzk_conn:no_heartbeat(Pid),
+    {stop, shutdown, State};
+handle_info(_Info, State=#state{interval=Interval}) ->
+    {noreply, State, Interval}.
 
-beating({timeout,_Timer,{?NOBEAT}},State=#state{callback=Callback}) ->
-  error_logger:info_msg("Heartbeat: timeout~n"),
-  try
-    {M,F,A}=Callback,
-    M:F(A)
-  catch exit:{noproc,_} ->
-    ok
-  end,
-  {stop,shutdown,State}.
+terminate(_Reason, _State) ->
+    ok.
 
-%%--------------------------------------------------------------------
-handle_event(_Event, StateName, State) ->
-  {next_state, StateName, State}.
-
-handle_sync_event(_Event, _From, StateName, State) ->
-  Reply = ok,
-  {reply, Reply, StateName, State}.
-
-handle_info(_Info, StateName, State) ->
-  {next_state, StateName, State}.
-
-terminate(_Reason, _StateName, _State) ->
-  ok.
-
-code_change(_OldVsn, StateName, State, _Extra) ->
-  {ok, StateName, State}.
-
-%%--------------------------------------------------------------------
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
