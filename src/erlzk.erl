@@ -18,7 +18,7 @@
 
 -include("erlzk.hrl").
 
--export([start/0, stop/0, connect/2, connect/3, connect/4, close/1]).
+-export([start/0, stop/0, connect/2, connect/3, connect/4, kill_session/1, close/1]).
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
@@ -87,6 +87,12 @@ connect(ServerName, ServerList, Timeout) when is_integer(Timeout) ->
               server_list(), pos_integer(), options()) -> {ok, pid()} | {error, atom()}.
 connect(ServerName, ServerList, Timeout, Options) ->
     erlzk_conn_sup:start_conn([ServerName, ServerList, Timeout, Options]).
+
+%% @doc Cause the session to terminate while retaining connection.
+%%  (useful when testing session restart behaviour).
+-spec kill_session(pid()) -> ok.
+kill_session(Pid) ->
+  erlzk_conn:kill_session(Pid).
 
 %% @doc Disconnect to ZooKeeper.
 -spec close(pid()) -> ok.
