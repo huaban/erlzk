@@ -394,7 +394,7 @@ connect([{Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastSessionI
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword)
     end.
 
-reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
+reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot, host=OldHost, port=OldPort,
                        proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
                        xid=Xid, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(shuffle(ServerList), ProtoVer, Zxid, Timeout, SessionId, Passwd) of
@@ -403,8 +403,12 @@ reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
             RenewState = NewState#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
                                         xid=Xid, zxid=Zxid, reset_watch=ResetWatch, monitor=Monitor,
                                         heartbeat_watcher=HeartbeatWatcher, watchers=Watchers},
+            RenewState2 = case {Host, Port} of
+                {OldHost, OldPort} -> RenewState;
+                _ -> reset_watch_return_new_state(RenewState, Watchers)
+            end,
             notify_monitor_server_state(Monitor, connected, Host, Port),
-            {noreply, RenewState, PingIntv};
+            {noreply, RenewState2, PingIntv};
         {error, session_expired} ->
             error_logger:warning_msg("Session expired, creating new connection now"),
             reconnect_after_session_expired(State);
