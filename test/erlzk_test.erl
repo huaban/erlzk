@@ -371,7 +371,7 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertEqual(true, erlang:is_process_alive(GetChildCreateWatch)),
     ?assertMatch({ok, "/a"}, erlzk:create(Pid, "/a")),
     ?assertEqual(false, erlang:is_process_alive(ExistCreateWatch)),
-    ?assertEqual(false, erlang:is_process_alive(GetDataCreateWatch)),
+    ?assertEqual(true, erlang:is_process_alive(GetDataCreateWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetChildCreateWatch)),
 
     ExistChangedWatch = spawn(fun() ->

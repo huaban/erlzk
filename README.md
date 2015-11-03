@@ -161,8 +161,12 @@ Some functions like`erlzk:exists/3`, `erlzk:get_data/3`, `erlzk:get_children/3`,
 accept a watcher, it's your program's process, used for receiving ZooKeeper watch events.
 
 A successful `erlzk:create/5` will trigger all the watches left on the
-node of the given path by `erlzk:exists/3` and `erlzk:get_data/3`,
-and the watches left on the parent node by `erlzk:get_children/3`.
+node of the given path by `erlzk:exists/3` and the watches left on the parent
+node by `erlzk:get_children/3`.
+
+> NOTE: ZooKeeper official client implementation is wrong. In its client,
+> NodeCreated will trigger both the DataWatches and the ExistWatches, but
+> ZooKeeper server won't send created event for DataWatches (`get_data`).
 
 A successful `erlzk:delete/3` will trigger all the watches left on the node of
 the given path by `erlzk:exists/3` and `erlzk:get_data/3` and `erlzk:get_children/3`,

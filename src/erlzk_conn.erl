@@ -476,7 +476,7 @@ get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
     end.
 
 find_and_erase_watchers(node_created, Path, Watchers) ->
-    find_and_erase_watchers([get_data, exists], Path, Watchers);
+    find_and_erase_watchers([exists], Path, Watchers);
 find_and_erase_watchers(node_deleted, Path, Watchers) ->
     find_and_erase_watchers([get_data, exists, get_children], Path, Watchers);
 find_and_erase_watchers(node_data_changed, Path, Watchers) ->
