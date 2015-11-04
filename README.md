@@ -216,7 +216,6 @@ erlzk:exists(Pid, "/a", spawn(fun() ->
         receive
             % receive a watch event
             {Event, Path} ->
-                Op = exists,
                 Path = "/a",
                 Event = node_created
         end
