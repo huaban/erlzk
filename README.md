@@ -185,7 +185,7 @@ A successful `erlzk:set_data/4` will trigger all the watches on the node of the 
 left by `erlzk:exists/3` and `erlzk:get_data/3` calls.
 
 When erlzk receive a watch event will send a message to your watcher,
-the message is a tuple, in the form of {RegisterPath, WatchEvent},
+the message is a tuple, in the form of {WatchEvent, RegisterPath},
 RegisterPath is useful when you need to reset a new watcher,
 WatchEvent include:
 
@@ -203,7 +203,7 @@ WatchEvent include:
 In erlzk, a watcher is a process, it will be trigger once for a given
 notification for the same path if it was set to receive multiple events.
 So here the format of tuple sent to watchers was changed from
-`{RegisterOperate, RegisterPath, WatchEvent}` to `{RegisterPath, WatchEvent}`.
+`{RegisterOperate, RegisterPath, WatchEvent}` to `{WatchEvent, RegisterPath}`.
 
 > NOTE: ZooKeeper watch event is one-time trigger, for more details about watch, read
 [ZooKeeper Watches](https://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html#ch_zkWatches).
@@ -215,7 +215,7 @@ Simple example as follows:
 erlzk:exists(Pid, "/a", spawn(fun() ->
         receive
             % receive a watch event
-            {Op, Path, Event} ->
+            {Event, Path} ->
                 Op = exists,
                 Path = "/a",
                 Event = node_created

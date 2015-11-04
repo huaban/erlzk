@@ -494,7 +494,7 @@ find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
 send_watched_event([], _Path, _EventType) ->
     ok;
 send_watched_event([Watcher|Left], Path, EventType) ->
-    Watcher ! {Path, EventType},
+    Watcher ! {EventType, Path},
     send_watched_event(Left, Path, EventType).
 
 get_chroot_path(P) -> get_chroot_path0(lists:reverse(P)).
