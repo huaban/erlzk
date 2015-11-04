@@ -34,11 +34,6 @@
 -else.
 -define(ZK_RECONNECT_INTERVAL, 10000).
 -endif.
--ifdef(pre18).
--define(TIMESTAMP, erlang:now()).
--else.
--define(TIMESTAMP, erlang:unique_integer([monotonic])).
--endif.
 
 -record(state, {
     servers = [],
@@ -194,13 +189,12 @@ handle_call({Op, Args}, From, State=#state{chroot=Chroot, socket=Socket, xid=Xid
         {error, Reason} ->
             {reply, {error, Reason}, State#state{xid=Xid+1}, PingIntv}
     end;
-handle_call({Op, Args, Watcher}, From, State=#state{chroot=Chroot, socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs, watchers=Watchers}) ->
+handle_call({Op, Args, Watcher}, From, State=#state{chroot=Chroot, socket=Socket, xid=Xid, ping_interval=PingIntv, reqs=Reqs}) ->
     case gen_tcp:send(Socket, erlzk_codec:pack(Op, Args, Xid, Chroot)) of
         ok ->
-            NewReqs = dict:store(Xid, {Op, From}, Reqs),
             Path = element(1, Args),
-            NewWatchers = store_watcher(Op, Path, Watcher, Watchers),
-            {noreply, State#state{xid=Xid+1, reqs=NewReqs, watchers=NewWatchers}, PingIntv};
+            NewReqs = dict:store(Xid, {Op, From, Path, Watcher}, Reqs),
+            {noreply, State#state{xid=Xid+1, reqs=NewReqs}, PingIntv};
         {error, Reason} ->
             {reply, {error, Reason}, State#state{xid=Xid+1}, PingIntv}
     end;
@@ -240,9 +234,10 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
     erlzk_heartbeat:beat(HeartbeatWatcher),
     case Xid of
         -1 -> % watched event
-            {EventType, _KeeperState, Path} = erlzk_codec:unpack(watched_event, Body, Chroot),
-            {Receivers, NewWatchers} = find_and_erase_watchers(EventType, list_to_binary(Path), Watchers),
-            send_watched_event(Receivers, EventType),
+            {EventType, _KeeperState, PathList} = erlzk_codec:unpack(watched_event, Body, Chroot),
+            Path = list_to_binary(PathList),
+            {Receivers, NewWatchers} = find_and_erase_watchers(EventType, Path, Watchers),
+            send_watched_event(Receivers, Path, EventType),
             {noreply, State#state{zxid=Zxid, watchers=NewWatchers}, PingIntv};
         -2 -> % ping
             {noreply, State#state{zxid=Zxid}, PingIntv};
@@ -267,30 +262,16 @@ handle_info({tcp, _Port, Packet}, State=#state{chroot=Chroot, ping_interval=Ping
             end;
         _  -> % normal reply
             case dict:find(Xid, Reqs) of
-                {ok, {Op, From}} ->
-                    NewReqs = dict:erase(Xid, Reqs),
-                    Reply = case Code of
-                        ok ->
-                            if size(Body) =:= 0 ->
-                                ok;
-                               true ->
-                                Result = erlzk_codec:unpack(Op, Body, Chroot),
-                                if Op =:= multi -> % multi reply
-                                    case Result of
-                                        {ok, _} ->
-                                            Result;
-                                        _ ->
-                                            {error, Result}
-                                    end;
-                                   Op =/= multi ->
-                                    {ok, Result}
-                                end
-                            end;
-                        _  ->
-                            {error, Code}
+                {ok, Req} ->
+                    {Op, From} = case Req of
+                        {X, Y}       -> {X, Y};
+                        {X, Y, _, _} -> {X, Y}
                     end,
+                    NewReqs = dict:erase(Xid, Reqs),
+                    Reply = get_reply_from_body(Code, Op, Body, Chroot),
+                    NewWatchers = maybe_store_watcher(Code, Req, Watchers),
                     gen_server:reply(From, Reply),
-                    {noreply, State#state{zxid=Zxid, reqs=NewReqs}, PingIntv};
+                    {noreply, State#state{zxid=Zxid, reqs=NewReqs, watchers=NewWatchers}, PingIntv};
                 error ->
                     {noreply, State#state{zxid=Zxid}, PingIntv}
             end
@@ -459,11 +440,23 @@ notify_monitor_server_state(Monitor, State, Host, Port) ->
             Monitor ! {State, Host, Port}
     end.
 
+should_add_watcher(no_node, exists) -> true;
+should_add_watcher(ok, _Op)         -> true;
+should_add_watcher(_Code, _Op)      -> false.
+
+maybe_store_watcher(_Code, {_Op, _From}, Watchers) ->
+    Watchers;
+maybe_store_watcher(Code, {Op, _From, Path, Watcher}, Watchers) ->
+    case should_add_watcher(Code, Op) of
+        false -> Watchers;
+        true -> store_watcher(Op, Path, Watcher, Watchers)
+    end.
+
 store_watcher(Op, Path, Watcher, Watchers) when not is_binary(Path)->
     store_watcher(Op, iolist_to_binary(Path), Watcher, Watchers);
 store_watcher(Op, Path, Watcher, Watchers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
-    NewWatchers = dict:store(Path, {?TIMESTAMP, Op, Path, Watcher}, DestWatcher),
+    NewWatchers = dict:append(Path, Watcher, DestWatcher),
     setelement(Index, Watchers, NewWatchers).
 
 get_watchers_by_op(Op, {DataWatchers, ExistWatchers, ChildWatchers}) ->
@@ -484,25 +477,25 @@ find_and_erase_watchers(node_data_changed, Path, Watchers) ->
 find_and_erase_watchers(node_children_changed, Path, Watchers) ->
     find_and_erase_watchers([get_children], Path, Watchers);
 find_and_erase_watchers(Ops, Path, Watchers) ->
-    find_and_erase_watchers(Ops, Path, Watchers, []).
+    find_and_erase_watchers(Ops, Path, Watchers, sets:new()).
 
 find_and_erase_watchers([], _Path, Watchers, Receivers) ->
-    {lists:sort(Receivers), Watchers};
+    {sets:to_list(Receivers), Watchers};
 find_and_erase_watchers([Op|Left], Path, Watchers, Receivers) ->
     {Index, DestWatcher} = get_watchers_by_op(Op, Watchers),
     R = case dict:find(Path, DestWatcher) of
-        {ok, X} -> [X|Receivers];
+        {ok, X} -> sets:union(sets:from_list(X), Receivers);
         error   -> Receivers
     end,
     NewWatchers = dict:erase(Path, DestWatcher),
     W = setelement(Index, Watchers, NewWatchers),
     find_and_erase_watchers(Left, Path, W, R).
 
-send_watched_event([], _EventType) ->
+send_watched_event([], _Path, _EventType) ->
     ok;
-send_watched_event([{_Time, Op, Path, Watcher}|Left], EventType) ->
-    Watcher ! {Op, Path, EventType},
-    send_watched_event(Left, EventType).
+send_watched_event([Watcher|Left], Path, EventType) ->
+    Watcher ! {Path, EventType},
+    send_watched_event(Left, Path, EventType).
 
 get_chroot_path(P) -> get_chroot_path0(lists:reverse(P)).
 get_chroot_path0("/" ++ P) -> get_chroot_path0(P);
@@ -512,3 +505,13 @@ stop_heartbeat({HeartbeatWatcher, HeartbeatRef}) ->
     erlang:demonitor(HeartbeatRef),
     erlzk_heartbeat:stop(HeartbeatWatcher).
 
+get_reply_from_body(ok, _Op, <<>>, _Chroot) -> ok;
+get_reply_from_body(ok, Op, Body, Chroot) ->
+    Result = erlzk_codec:unpack(Op, Body, Chroot),
+    multi_result(Op, Result);
+get_reply_from_body(no_node, _Op, _Body, _Chroot) -> {error, no_node};
+get_reply_from_body(Code, _, _, _) -> {error, Code}.
+
+multi_result(multi, {ok, _}=Result) -> Result;
+multi_result(multi, Result)         -> {error, Result};
+multi_result(_, Result)             -> {ok, Result}.
