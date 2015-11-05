@@ -348,21 +348,22 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ExistCreateWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,<<"/a">>,node_created}, WatchedEvent)
+                ?assertMatch({node_created, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a", ExistCreateWatch)),
     GetDataCreateWatch = spawn(fun() ->
         receive
-            WatchedEvent ->
-                ?assertMatch({get_data,<<"/a">>,node_created}, WatchedEvent)
+            _WatchedEvent ->
+                %% should not receive event
+                ?assert(false)
         end
     end),
     ?assertMatch({error, no_node}, erlzk:get_data(Pid, "/a", GetDataCreateWatch)),
     GetChildCreateWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,<<"/">>,node_children_changed}, WatchedEvent)
+                ?assertMatch({node_children_changed, <<"/">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, ["zookeeper"]}, erlzk:get_children(Pid, "/", GetChildCreateWatch)),
@@ -374,24 +375,43 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertEqual(true, erlang:is_process_alive(GetDataCreateWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetChildCreateWatch)),
 
+    ExistAndGetDataChangedWatchReceiver = spawn(fun() ->
+                                                        receive
+                                                            node_data_changed -> ?assert(true)
+                                                        end
+                                                end),
+    ExistAndGetDataChangedWatch = spawn(fun() ->
+        receive
+            WatchedEvent ->
+                ?assertMatch({node_data_changed, <<"/a">>}, WatchedEvent),
+                ExistAndGetDataChangedWatchReceiver ! node_data_changed,
+                receive
+                    %% should not receive the same event again
+                    WatchedEvent ->
+                        ?assert(false)
+                end
+        end
+    end),
+    ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistAndGetDataChangedWatch)),
+    ?assertMatch({ok, {<<>>, _Stat}}, erlzk:get_data(Pid, "/a", ExistAndGetDataChangedWatch)),
     ExistChangedWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,<<"/a">>,node_data_changed}, WatchedEvent)
+                ?assertMatch({node_data_changed, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistChangedWatch)),
     GetDataChangedWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_data,<<"/a">>,node_data_changed}, WatchedEvent)
+                ?assertMatch({node_data_changed, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, {<<>>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataChangedWatch)),
     GetChildDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,<<"/">>,node_children_changed}, WatchedEvent)
+                ?assertMatch({node_children_changed, <<"/">>}, WatchedEvent)
         end
     end),
     {ok, Children} = erlzk:get_children(Pid, "/", GetChildDeleteWatch),
@@ -399,31 +419,35 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     GetChildDeleteWatch0 = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_children,<<"/a">>,node_deleted}, WatchedEvent)
+                ?assertMatch({node_deleted, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, []}, erlzk:get_children(Pid, "/a", GetChildDeleteWatch0)),
     ?assertEqual(true, erlang:is_process_alive(ExistChangedWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetDataChangedWatch)),
+    ?assertEqual(true, erlang:is_process_alive(ExistAndGetDataChangedWatch)),
+    ?assertEqual(true, erlang:is_process_alive(ExistAndGetDataChangedWatchReceiver)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch0)),
     ?assertMatch({ok, _Stat}, erlzk:set_data(Pid, "/a", <<"a">>)),
     ?assertEqual(false, erlang:is_process_alive(ExistChangedWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetDataChangedWatch)),
+    ?assertEqual(true, erlang:is_process_alive(ExistAndGetDataChangedWatch)),
+    ?assertEqual(false, erlang:is_process_alive(ExistAndGetDataChangedWatchReceiver)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch0)),
 
     ExistDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({exists,<<"/a">>,node_deleted}, WatchedEvent)
+                ?assertMatch({node_deleted, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistDeleteWatch)),
     GetDataDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
-                ?assertMatch({get_data,<<"/a">>,node_deleted}, WatchedEvent)
+                ?assertMatch({node_deleted, <<"/a">>}, WatchedEvent)
         end
     end),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataDeleteWatch)),

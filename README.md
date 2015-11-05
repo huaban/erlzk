@@ -160,13 +160,22 @@ ok = erlzk:delete(Pid, "/a").
 Some functions like`erlzk:exists/3`, `erlzk:get_data/3`, `erlzk:get_children/3`, `erlzk:get_children2/3`
 accept a watcher, it's your program's process, used for receiving ZooKeeper watch events.
 
+If `erlzk:get_data/3`, `erlzk:get_children` and `erlzk:get_children2/3` call
+returns any thing other than `{ok, _}`, the watches won't be set.
+For `erlzk:exists`, only `{ok, _}` and `{error, no_node}` returns will set
+the watches.
+
 A successful `erlzk:create/5` will trigger all the watches left on the
 node of the given path by `erlzk:exists/3` and the watches left on the parent
 node by `erlzk:get_children/3`.
 
-> NOTE: ZooKeeper official client implementation is wrong. In its client,
-> NodeCreated will trigger both the DataWatches and the ExistWatches, but
-> ZooKeeper server won't send created event for DataWatches (`get_data`).
+> NOTE: The ZooKeeper official client implementation is confused.
+> In its implementation, both `node_data_changed` event and `node_created`
+> will trigger data watches(`get_data`) and exist watches(`exists`) together.
+> But in the ZooKeeper server, the watch won't be added if there is no node
+> for get_data call.
+> In our implementation, we follow the
+> [semantics of watches](http://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html#sc_WatchSemantics).
 
 A successful `erlzk:delete/3` will trigger all the watches left on the node of
 the given path by `erlzk:exists/3` and `erlzk:get_data/3` and `erlzk:get_children/3`,
@@ -176,14 +185,25 @@ A successful `erlzk:set_data/4` will trigger all the watches on the node of the 
 left by `erlzk:exists/3` and `erlzk:get_data/3` calls.
 
 When erlzk receive a watch event will send a message to your watcher,
-the message is a tuple, in the form of {RegisterOperate, RegisterPath, WatchEvent},
-RegisterOperate and RegisterPath is useful when you need to reset a new watcher,
+the message is a tuple, in the form of {WatchEvent, RegisterPath},
+RegisterPath is useful when you need to reset a new watcher,
 WatchEvent include:
 
 + node_created
 + node_deleted
 + node_data_changed
 + node_children_changed
+
+> NOTE: A watch object, or function/context pair, will only be triggered once
+> for a given notification. For example, if the same watch object is registered
+> for an exists and a getData call for the same file and that file is then
+> deleted, the watch object would only be invoked once with the deletion
+> notification for the file.
+
+In erlzk, a watcher is a process, it will be trigger once for a given
+notification for the same path if it was set to receive multiple events.
+So here the format of tuple sent to watchers was changed from
+`{RegisterOperate, RegisterPath, WatchEvent}` to `{WatchEvent, RegisterPath}`.
 
 > NOTE: ZooKeeper watch event is one-time trigger, for more details about watch, read
 [ZooKeeper Watches](https://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html#ch_zkWatches).
@@ -195,8 +215,7 @@ Simple example as follows:
 erlzk:exists(Pid, "/a", spawn(fun() ->
         receive
             % receive a watch event
-            {Op, Path, Event} ->
-                Op = exists,
+            {Event, Path} ->
                 Path = "/a",
                 Event = node_created
         end
