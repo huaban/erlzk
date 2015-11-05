@@ -375,11 +375,7 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertEqual(true, erlang:is_process_alive(GetDataCreateWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetChildCreateWatch)),
 
-    ExistAndGetDataChangedWatchReceiver = spawn(fun() ->
-                                                        receive
-                                                            node_data_changed -> ?assert(true)
-                                                        end
-                                                end),
+    ExistAndGetDataChangedWatchReceiver = check_received(node_data_changed),
     ExistAndGetDataChangedWatch = spawn(fun() ->
         receive
             WatchedEvent ->
@@ -433,10 +429,18 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertEqual(false, erlang:is_process_alive(ExistChangedWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetDataChangedWatch)),
     ?assertEqual(true, erlang:is_process_alive(ExistAndGetDataChangedWatch)),
-    ?assertEqual(false, erlang:is_process_alive(ExistAndGetDataChangedWatchReceiver)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch0)),
+    timer:sleep(10), %% Wait for receiver process
+    ?assertEqual(false, erlang:is_process_alive(ExistAndGetDataChangedWatchReceiver)),
 
+    Receiver1 = check_received(node_deleted),
+    Receiver2 = check_received(node_children_changed),
+    AllWatch = spawn(fun() ->
+        loop_watch_all([
+                        {{node_deleted, <<"/a">>}, {Receiver1, node_deleted}},
+                        {{node_children_changed, <<"/">>}, {Receiver2, node_children_changed}}])
+    end),
     ExistDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
@@ -444,6 +448,7 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
         end
     end),
     ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", ExistDeleteWatch)),
+    ?assertMatch({ok, _Stat}, erlzk:exists(Pid, "/a", AllWatch)),
     GetDataDeleteWatch = spawn(fun() ->
         receive
             WatchedEvent ->
@@ -451,15 +456,47 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
         end
     end),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataDeleteWatch)),
+    ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", AllWatch)),
+    {ok, Children1} = erlzk:get_children(Pid, "/", AllWatch),
+    ?assertMatch(["a","zookeeper"], lists:sort(Children1)),
     ?assertEqual(true, erlang:is_process_alive(ExistDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetDataDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch0)),
+    ?assertEqual(true, erlang:is_process_alive(Receiver1)),
+    ?assertEqual(true, erlang:is_process_alive(Receiver2)),
     ?assertMatch(ok, erlzk:delete(Pid, "/a")),
     ?assertEqual(false, erlang:is_process_alive(ExistDeleteWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetDataDeleteWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetChildDeleteWatch)),
     ?assertEqual(false, erlang:is_process_alive(GetChildDeleteWatch0)),
+    ?assertEqual(true, erlang:is_process_alive(AllWatch)),
+    timer:sleep(10), %% Wait for receiver processes
+    ?assertEqual(false, erlang:is_process_alive(Receiver1)),
+    ?assertEqual(false, erlang:is_process_alive(Receiver2)),
 
     erlzk:close(Pid),
     ok.
+
+loop_watch_all([]) ->
+    receive
+        _ ->
+            %% should not receive events any more
+            ?assert(false)
+    end;
+loop_watch_all(EventsList) ->
+    Events = dict:from_list(EventsList),
+    receive
+        WatchedEvent ->
+            ?assert(dict:is_key(WatchedEvent, Events)),
+            {Receiver, Msg} = dict:fetch(WatchedEvent, Events),
+            Receiver ! Msg,
+            loop_watch_all(dict:to_list(dict:erase(WatchedEvent, Events)))
+    end.
+
+check_received(Msg) ->
+    spawn(fun() ->
+        receive
+            Received -> ?assertMatch(Msg, Received)
+        end
+    end).
