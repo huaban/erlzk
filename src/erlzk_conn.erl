@@ -289,19 +289,10 @@ handle_info({tcp_error, _Port, Reason}, State=#state{socket=Socket, host=Host, p
     reconnect(State#state{heartbeat_watcher=undefined});
 handle_info(reconnect, State) ->
     reconnect(State);
-handle_info({'DOWN', Ref, process, _Pid, Reason}, State=#state{timeout=TimeOut, ping_interval=PingIntv, heartbeat_watcher={_HeartbeatWatcher, HeartbeatRef}}) ->
-    case Ref of
-        HeartbeatRef ->
-            if Reason =/= normal andalso Reason =/= shutdown ->
-                error_logger:warning_msg("Heartbeat process exit: ~p~n", [Reason]),
-                {ok, NewHeartbeatWatcher} = erlzk_heartbeat:start(self(), TimeOut * 2 div 3),
-                {noreply, State#state{heartbeat_watcher={NewHeartbeatWatcher, erlang:monitor(process, NewHeartbeatWatcher)}}, PingIntv};
-               true ->
-                {noreply, State, PingIntv}
-            end;
-        _ ->
-            {noreply, State, PingIntv}
-    end;
+handle_info({'DOWN', Ref, process, Pid, Reason}, State=#state{heartbeat_watcher={Pid, Ref}}) ->
+    maybe_restart_heartbeat(Reason, State);
+handle_info({'DOWN', _Ref, process, _Pid, _Reason}, State=#state{ping_interval=PingIntv}) ->
+    {noreply, State, PingIntv};
 handle_info({'EXIT', _Ref, Reason}, State) ->
     {stop, Reason, State};
 handle_info(_Info, State=#state{ping_interval=PingIntv}) ->
@@ -320,6 +311,7 @@ terminate(shutdown, #state{socket=Socket, heartbeat_watcher=HeartbeatWatcher}) -
     error_logger:warning_msg("Server is shutdown~n"),
     ok;
 terminate(Reason, #state{socket=Socket, heartbeat_watcher=HeartbeatWatcher}) ->
+    error_logger:error_msg("Connection terminating with reason: ~p~n", [Reason]),
     stop_heartbeat(HeartbeatWatcher),
     gen_tcp:send(Socket, <<1:32, -11:32>>),
     gen_tcp:close(Socket),
@@ -503,6 +495,7 @@ get_chroot_path(P) -> get_chroot_path0(lists:reverse(P)).
 get_chroot_path0("/" ++ P) -> get_chroot_path0(P);
 get_chroot_path0(P) -> lists:reverse(P).
 
+stop_heartbeat(undefined) -> ok;
 stop_heartbeat({HeartbeatWatcher, HeartbeatRef}) ->
     erlang:demonitor(HeartbeatRef),
     erlzk_heartbeat:stop(HeartbeatWatcher).
@@ -517,3 +510,12 @@ get_reply_from_body(Code, _, _, _) -> {error, Code}.
 multi_result(multi, {ok, _}=Result) -> Result;
 multi_result(multi, Result)         -> {error, Result};
 multi_result(_, Result)             -> {ok, Result}.
+
+maybe_restart_heartbeat(normal, State=#state{ping_interval=PingIntv}) ->
+    {noreply, State#state{heartbeat_watcher=undefined}, PingIntv};
+maybe_restart_heartbeat(shutdown, State=#state{ping_interval=PingIntv}) ->
+    {noreply, State#state{heartbeat_watcher=undefined}, PingIntv};
+maybe_restart_heartbeat(Reason, State=#state{timeout=TimeOut, ping_interval=PingIntv}) ->
+    error_logger:warning_msg("Heartbeat process exit: ~p~n", [Reason]),
+    {ok, NewHeartbeatWatcher} = erlzk_heartbeat:start(self(), TimeOut * 2 div 3),
+    {noreply, State#state{heartbeat_watcher={NewHeartbeatWatcher, erlang:monitor(process, NewHeartbeatWatcher)}}, PingIntv}.
