@@ -302,6 +302,8 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}, State=#state{timeout=TimeOut, 
         _ ->
             {noreply, State, PingIntv}
     end;
+handle_info({'EXIT', _Ref, Reason}, State) ->
+    {stop, Reason, State};
 handle_info(_Info, State=#state{ping_interval=PingIntv}) ->
     {noreply, State, PingIntv}.
 
