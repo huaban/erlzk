@@ -220,7 +220,7 @@ handle_cast(no_heartbeat, State=#state{host=Host, port=Port, monitor=Monitor, so
     error_logger:error_msg("Connection to ~p:~p is not responding, will be closed and reconnect~n", [Host, Port]),
     gen_tcp:close(Socket),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
-    reconnect(State#state{host=undefined, port=undefined});
+    reconnect(State);
 handle_cast(_Request, State=#state{ping_interval=PingIntv}) ->
     {noreply, State, PingIntv}.
 
@@ -280,13 +280,13 @@ handle_info({tcp_closed, _Port}, State=#state{host=Host, port=Port, monitor=Moni
     error_logger:error_msg("Connection to ~p:~p is broken, reconnect now~n", [Host, Port]),
     stop_heartbeat(HeartbeatWatcher),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
-    reconnect(State#state{host=undefined, port=undefined, heartbeat_watcher=undefined});
+    reconnect(State#state{heartbeat_watcher=undefined});
 handle_info({tcp_error, _Port, Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor, heartbeat_watcher=HeartbeatWatcher}) ->
     error_logger:error_msg("Connection to ~p:~p meet an error, will be closed and reconnect: ~p~n", [Host, Port, Reason]),
     gen_tcp:close(Socket),
     stop_heartbeat(HeartbeatWatcher),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
-    reconnect(State#state{host=undefined, port=undefined, heartbeat_watcher=undefined});
+    reconnect(State#state{heartbeat_watcher=undefined});
 handle_info(reconnect, State) ->
     reconnect(State);
 handle_info({'DOWN', Ref, process, _Pid, Reason}, State=#state{timeout=TimeOut, ping_interval=PingIntv, heartbeat_watcher={_HeartbeatWatcher, HeartbeatRef}}) ->
