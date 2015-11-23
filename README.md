@@ -6,7 +6,7 @@
 [Zookeeper Programmers Guide](https://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html)
 before using erlzk.
 
-> ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function, 
+> ATTENTION: ZooKeeper latest stable v3.4.6 removed create2 function,
   but it works fine in v3.4.5 or current developing v3.5.0 (ZooKeeper added it again).
 
 ## Features
@@ -162,7 +162,7 @@ accept a watcher, it's your program's process, used for receiving ZooKeeper watc
 
 If `erlzk:get_data/3`, `erlzk:get_children` and `erlzk:get_children2/3` call
 returns any thing other than `{ok, _}`, the watches won't be set.
-For `erlzk:exists`, only `{ok, _}` and `{error, no_node}` returns will set
+For `erlzk:exists/3`, only `{ok, _}` and `{error, no_node}` returns will set
 the watches.
 
 A successful `erlzk:create/5` will trigger all the watches left on the
@@ -184,7 +184,7 @@ and the watches left on the parent node by `erlzk:get_children/3`.
 A successful `erlzk:set_data/4` will trigger all the watches on the node of the given path
 left by `erlzk:exists/3` and `erlzk:get_data/3` calls.
 
-When erlzk receive a watch event will send a message to your watcher,
+When erlzk receives a watch event, it will send a message to your watcher,
 the message is a tuple, in the form of {WatchEvent, RegisterPath},
 RegisterPath is useful when you need to reset a new watcher,
 WatchEvent include:
@@ -203,7 +203,8 @@ WatchEvent include:
 In erlzk, a watcher is a process, it will be trigger once for a given
 notification for the same path if it was set to receive multiple events.
 So here the format of tuple sent to watchers was changed from
-`{RegisterOperate, RegisterPath, WatchEvent}` to `{WatchEvent, RegisterPath}`.
+`{RegisterOperate, RegisterPath, WatchEvent}` to `{WatchEvent, RegisterPath}`
+**since v0.6.0** .
 
 > NOTE: ZooKeeper watch event is one-time trigger, for more details about watch, read
 [ZooKeeper Watches](https://zookeeper.apache.org/doc/trunk/zookeeperProgrammers.html#ch_zkWatches).
@@ -223,6 +224,26 @@ erlzk:exists(Pid, "/a", spawn(fun() ->
 % create a node trigger the watch
 {ok, "/a"} = erlzk:create(Pid, "/a").
 
+```
+
+```erlang
+Wather = spwan(fun() ->
+    receive
+        % receive a node deleted event
+        {Event, Path} ->
+            Path = "/a",
+            Event = node_deleted
+    end
+end),
+
+{ok, "/a"} = erlzk:create(Pid, "/a"),
+
+% call exists and get_data to a same path with a same watcher
+erlzk:exists(Pid, "/a", Watcher),
+erlzk:get_data(Pid, "/a", Watcher),
+
+% delete the node will trigger the watcher once
+erlzk:delete(Pid, "/a").
 ```
 
 ## API Specification

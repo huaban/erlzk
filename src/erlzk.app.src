@@ -1,6 +1,6 @@
 {application, erlzk, [
     {description, "A Pure Erlang ZooKeeper Client (no C dependency)"},
-    {vsn, "0.5.1"},
+    {vsn, "0.6.0"},
     {registered, [erlzk_sup,erlzk_conn_sup]},
     {applications, [
         kernel,
