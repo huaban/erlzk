@@ -2,6 +2,14 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include("erlzk.hrl").
+-define(assertListContain(Elem, List2), begin
+                                             case Elem of
+                                                 Elem when is_list(Elem) ->
+                                                     lists:all(fun(E) -> lists:member(E, List2) end, Elem);
+                                                 _ ->
+                                                     lists:member(Elem, List2)
+                                             end
+                                         end).
 
 erlzk_test_() ->
     {foreach,
@@ -366,7 +374,8 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
                 ?assertMatch({node_children_changed, <<"/">>}, WatchedEvent)
         end
     end),
-    ?assertMatch({ok, ["zookeeper"]}, erlzk:get_children(Pid, "/", GetChildCreateWatch)),
+    {ok, Children1} = erlzk:get_children(Pid, "/", GetChildCreateWatch),
+    ?assertListContain(["zookeeper"], Children1),
     ?assertEqual(true, erlang:is_process_alive(ExistCreateWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetDataCreateWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildCreateWatch)),
@@ -410,8 +419,8 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
                 ?assertMatch({node_children_changed, <<"/">>}, WatchedEvent)
         end
     end),
-    {ok, Children} = erlzk:get_children(Pid, "/", GetChildDeleteWatch),
-    ?assertMatch(["a","zookeeper"], lists:sort(Children)),
+    {ok, Children2} = erlzk:get_children(Pid, "/", GetChildDeleteWatch),
+    ?assertListContain(["a", "zookeeper"], Children2),
     GetChildDeleteWatch0 = spawn(fun() ->
         receive
             WatchedEvent ->
@@ -457,8 +466,8 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     end),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", GetDataDeleteWatch)),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(Pid, "/a", AllWatch)),
-    {ok, Children1} = erlzk:get_children(Pid, "/", AllWatch),
-    ?assertMatch(["a","zookeeper"], lists:sort(Children1)),
+    {ok, Children3} = erlzk:get_children(Pid, "/", AllWatch),
+    ?assertListContain(["a","zookeeper"], Children3),
     ?assertEqual(true, erlang:is_process_alive(ExistDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetDataDeleteWatch)),
     ?assertEqual(true, erlang:is_process_alive(GetChildDeleteWatch)),

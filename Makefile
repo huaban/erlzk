@@ -1,5 +1,7 @@
 REBAR?=rebar
 
+ERL_FLAGS=ERL_FLAGS="-config test/eunit"
+
 all: build
 
 build:
@@ -12,6 +14,6 @@ doc:
 	$(REBAR) doc
 
 test: build
-	$(REBAR) eunit
+	$(ERL_FLAGS) $(REBAR) eunit
 
 .PHONY: all build clean doc test
