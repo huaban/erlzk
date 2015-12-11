@@ -328,6 +328,7 @@ chroot({ServerList, Timeout, Chroot, _AuthData}) ->
     ?assertMatch({ok, "/a"}, erlzk:create(P, "/a", <<"a">>)),
     ?assertMatch({error, no_node}, erlzk:exists(P, Chroot ++ "/a")),
     ?assertMatch({ok, _Stat}, erlzk:exists(P, "/a")),
+    ?assertMatch({ok, _Stat}, erlzk:exists(P, "/")),
     ?assertMatch({ok, {<<"a">>, _Stat}}, erlzk:get_data(P, "/a")),
     ?assertMatch({ok, _Stat}, erlzk:set_data(P, "/a", <<"b">>)),
     ?assertMatch({ok, {<<"b">>, _Stat}}, erlzk:get_data(P, "/a")),

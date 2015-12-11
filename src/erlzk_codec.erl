@@ -220,8 +220,13 @@ chroot(Path, Chroot) ->
     case Chroot of
         "/" -> Path;
         ""  -> Path;
-        _   -> Chroot ++ Path
+        _   -> join(Chroot, Path)
     end.
+
+join(Left, "/" ++ Right) ->
+    filename:join([Left, Right]);
+join(Left, Right) ->
+    filename:join([Left, Right]).
 
 unchroot(Path, Chroot) ->
     case Chroot of
