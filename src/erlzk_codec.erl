@@ -216,6 +216,8 @@ unpack(watched_event, Packet, Chroot) ->
 %% ===================================================================
 %% Internal Functions
 %% ===================================================================
+chroot(Path, Chroot) when is_binary(Path) ->
+    chroot(binary_to_list(Path), Chroot);
 chroot(Path, Chroot) ->
     case Chroot of
         "/" -> Path;

@@ -147,6 +147,7 @@ init([ServerList, Timeout, Options]) ->
     end,
     Chroot = case proplists:get_value(chroot, Options) of
         undefined -> "/";
+        BinValue when is_binary(BinValue) -> get_chroot_path(binary_to_list(BinValue));
         CrValue   -> get_chroot_path(CrValue)
     end,
     process_flag(trap_exit, true),
