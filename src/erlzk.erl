@@ -27,7 +27,8 @@
 
 -type server_list() :: [{Host::nonempty_string(), Port::pos_integer()}].
 -type options()     :: [{chroot, nonempty_string()} |
-                        {disable_watch_auto_reset, true | false} |
+                        {disable_watch_auto_reset, boolean()} |
+                        {disable_expire_reconnect, boolean()} |
                         {auth_data, [{Scheme::nonempty_string(), Id::binary()}]} |
                         {monitor, pid()}].
 -type acl()         :: {[perms()], scheme(), id()}.
@@ -78,7 +79,9 @@ connect(ServerName, ServerList, Timeout) when is_integer(Timeout) ->
 %%
 %% <em>chroot</em>: specify a node under which erlzk will operate on
 %%
-%% <em>disable_watch_auto_reset</em>: whether disable reset watches after the connection timeout, default is false
+%% <em>disable_watch_auto_reset</em>: whether to disable resetting of watches after reconnection, default is false
+%%
+%% <em>disable_expire_reconnect</em>: whether to disable reconnection after a session has expired, default is false
 %%
 %% <em>auth_data</em>: the auths need to be added after connected
 %%

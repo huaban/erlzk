@@ -88,10 +88,11 @@ a ping message if no other message sent in a third of negotiated timeout.
 ```
 
 Or you can use `erlzk:connect/3` or `erlzk:connect/4` for more options,
-the options parameter is a `proplists`, support 4 option types:
+the options parameter is a `proplists`, support 5 option types:
 
 + chroot: specify a node under which erlzk will operate on
-+ disable_watch_auto_reset: whether disable reset watches after the session timeout, default is false
++ disable_watch_auto_reset: whether to disable resetting of watches after reconnection, default is false
++ disable_expire_reconnect: whether to disable reconnection after a session has expired, default is false
 + auth_data: the auths need to be added after connected
 + monitor: a process receiving the message of connection state changing
 
@@ -113,7 +114,8 @@ but all ephemeral nodes you created will be deleted by ZooKeeper,
 it's your program's duty to rebuild it, so it's highly recommended to use monitor.
 
 Once connected, erlzk will attempt to stay connected regardless of intermittent connection loss
-or Zookeeper session expiration. Your program can be instructed to drop a connection by calling `erlzk:close/1`:
+or Zookeeper session expiration (unless the option disable_expire_reconnect was supplied with the value
+true. Your program can be instructed to drop a connection by calling `erlzk:close/1`:
 
 ```erlang
 erlzk:close(Pid).
