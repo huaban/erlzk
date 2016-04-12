@@ -32,7 +32,7 @@ Or add it to your rebar config
 ```erlang
 {deps, [
     ....
-    {erlzk, ".*", {git, "git://github.com/huaban/erlzk.git", {tag, "v0.6.1"}}}
+    {erlzk, ".*", {git, "git://github.com/huaban/erlzk.git", {tag, "v0.6.2"}}}
 ]}.
 ```
 
@@ -40,7 +40,7 @@ Or add it to your `mix.exs` dependencies in your elixir project:
 
 ```elixir
 def deps do
-    [{:erlzk, "~> 0.6.1"}]
+    [{:erlzk, "~> 0.6.2"}]
 end
 ```
 
