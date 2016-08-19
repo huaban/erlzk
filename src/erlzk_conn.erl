@@ -52,7 +52,7 @@
     timeout,
     session_id,
     password,
-    ping_interval,
+    ping_interval = infinity,
     xid = 1,
     zxid = 0,
     reset_watch = true,
