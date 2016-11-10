@@ -179,7 +179,7 @@ init([ServerList, Timeout, Options]) ->
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {ok, NewState, PingIntv};
         {error, Reason} ->
-            error_logger:error_msg("Connect fail: ~p, will be try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+            error_logger:error_msg("Connect failed: ~p, will try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             State = #state{servers=ShuffledServerList, auth_data=AuthData, chroot=Chroot,
                            proto_ver=ProtocolVersion, timeout=Timeout, session_id=SessionId, password=Password,
@@ -241,7 +241,7 @@ handle_call(_Request, _From, State=#state{ping_interval=PingIntv}) ->
     {noreply, State, PingIntv}.
 
 handle_cast(no_heartbeat, State=#state{host=Host, port=Port, monitor=Monitor, socket=Socket}) ->
-    error_logger:error_msg("Connection to ~p:~p is not responding, will be closed and reconnect~n", [Host, Port]),
+    error_logger:error_msg("Connection to ~p:~p is not responding, will close and reconnect~n", [Host, Port]),
     close_connection(Socket, false),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
     State1 = notify_callers_closed(State),
@@ -304,13 +304,13 @@ handle_info({tcp, Socket, Packet}, State=#state{chroot=Chroot, socket=Socket, pi
             end
     end;
 handle_info({tcp_closed, Socket}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor, heartbeat_watcher=HeartbeatWatcher}) ->
-    error_logger:error_msg("Connection to ~p:~p is broken, reconnect now~n", [Host, Port]),
+    error_logger:error_msg("Connection to ~p:~p is broken, reconnecting now~n", [Host, Port]),
     stop_heartbeat(HeartbeatWatcher),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
     State1 = notify_callers_closed(State),
     reconnect(State1#state{socket=undefined, heartbeat_watcher=undefined});
 handle_info({tcp_error, Socket, Reason}, State=#state{socket=Socket, host=Host, port=Port, monitor=Monitor, heartbeat_watcher=HeartbeatWatcher}) ->
-    error_logger:error_msg("Connection to ~p:~p meet an error, will be closed and reconnect: ~p~n", [Host, Port, Reason]),
+    error_logger:error_msg("Connection to ~p:~p encountered an error, will close and reconnect: ~p~n", [Host, Port, Reason]),
     close_connection(Socket, false),
     stop_heartbeat(HeartbeatWatcher),
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
@@ -363,7 +363,7 @@ resolve_server({Host, Port}) ->
         {ok, #hostent{h_addr_list=Addresses}} ->
             [{Address, Port} || Address <- Addresses];
         {error, Reason} ->
-            error_logger:error_msg("Resolving ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+            error_logger:error_msg("Resolving ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
             []
     end.
     
@@ -403,7 +403,7 @@ connect([Server={Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastS
                             error_logger:error_msg("Connection to ~p:~p is closed~n", [Host, Port]),
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList]);
                         {tcp_error, Socket, Reason} ->
-                            error_logger:error_msg("Connection to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+                            error_logger:error_msg("Connection to ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
                             gen_tcp:close(Socket),
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
                     after ?ZK_CONNECT_TIMEOUT ->
@@ -412,12 +412,12 @@ connect([Server={Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastS
                         connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
                     end;
                 {error, Reason} ->
-                    error_logger:error_msg("Sending connect command to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+                    error_logger:error_msg("Sending connect command to ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
                     gen_tcp:close(Socket),
                     connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
             end;
         {error, Reason} ->
-            error_logger:error_msg("Connecting to ~p:~p meet an error: ~p~n", [Host, Port, Reason]),
+            error_logger:error_msg("Connecting to ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
     end.
 
@@ -457,7 +457,7 @@ reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthD
                                              timeout=Timeout, reset_watch=ResetWatch, monitor=Monitor, watchers=Watchers}) ->
     case connect(ServerList, 0, 0, Timeout, 0, <<0:128>>) of
         {ok, NewState=#state{host=Host, port=Port, ping_interval=PingIntv, heartbeat_watcher=HeartbeatWatcher}} ->
-            error_logger:warning_msg("Create a new connection to ~p:~p successful~n", [Host, Port]),
+            error_logger:warning_msg("Creating a new connection to ~p:~p successful~n", [Host, Port]),
             RenewState = reset_watch_return_new_state(NewState#state{auth_data=AuthData, chroot=Chroot,
                                                                      reset_watch=ResetWatch, monitor=Monitor,
                                                                      heartbeat_watcher=HeartbeatWatcher}, Watchers),
@@ -465,7 +465,7 @@ reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthD
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, Reason} ->
-            error_logger:error_msg("Connect fail: ~p, will be try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+            error_logger:error_msg("Connect failed: ~p, will try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
