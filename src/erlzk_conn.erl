@@ -179,7 +179,7 @@ init([ServerList, Timeout, Options]) ->
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {ok, NewState, PingIntv};
         {error, Reason} ->
-            error_logger:error_msg("Connect failed: ~p, will try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+            error_logger:error_msg("Connect failed: ~p, will try again after ~pms~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             State = #state{servers=ShuffledServerList, auth_data=AuthData, chroot=Chroot,
                            proto_ver=ProtocolVersion, timeout=Timeout, session_id=SessionId, password=Password,
@@ -366,7 +366,7 @@ resolve_server({Host, Port}) ->
             error_logger:error_msg("Resolving ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
             []
     end.
-    
+
 shuffle(L) ->
     % Uses rand module rather than random when available, so initial seed is not constant and list is shuffled differently on first call
     [X||{_,X} <- lists:sort([{?RANDOM_UNIFORM, N} || N <- L])].
@@ -448,7 +448,7 @@ reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot, ho
                     {noreply, State}
             end;
         {error, Reason} ->
-            error_logger:error_msg("Connect fail: ~p, will be try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+            error_logger:error_msg("Connect fail: ~p, will be try again after ~pms~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
@@ -465,7 +465,7 @@ reconnect_after_session_expired(State=#state{servers=ServerList, auth_data=AuthD
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState, PingIntv};
         {error, Reason} ->
-            error_logger:error_msg("Connect failed: ~p, will try again after ~ps~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+            error_logger:error_msg("Connect failed: ~p, will try again after ~pms~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
             erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
             {noreply, State}
     end.
