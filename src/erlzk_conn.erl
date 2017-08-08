@@ -162,29 +162,35 @@ init([ServerList, Timeout, Options]) ->
         CrValue   -> get_chroot_path(CrValue)
     end,
     process_flag(trap_exit, true),
-    ResolvedServerList = resolve_servers(ServerList),
-    DedupedServerList = lists:usort(ResolvedServerList),
-    ShuffledServerList = shuffle(DedupedServerList),
-    ProtocolVersion = 0,
-    Zxid = 0,
-    SessionId = 0,
-    Password = <<0:128>>,
-    case connect(ShuffledServerList, ProtocolVersion, Zxid, Timeout, SessionId, Password) of
-        {ok, State=#state{host=Host, port=Port, ping_interval=PingIntv,
-                          heartbeat_watcher=HeartbeatWatcher}} ->
-            NewState = State#state{auth_data=AuthData, chroot=Chroot,
-                                   reset_watch=ResetWatch, reconnect_expired=ReconnectExpired,
-                                   monitor=Monitor, heartbeat_watcher=HeartbeatWatcher},
-            add_init_auths(AuthData, NewState),
-            notify_monitor_server_state(Monitor, connected, Host, Port),
-            {ok, NewState, PingIntv};
+    case resolve_servers(ServerList) of
+        {ok, []} ->
+            {stop, no_servers};
+        {ok, ResolvedServerList} ->
+            DedupedServerList = lists:usort(ResolvedServerList),
+            ShuffledServerList = shuffle(DedupedServerList),
+
+            ProtocolVersion = 0,
+            Zxid = 0,
+            SessionId = 0,
+            Password = <<0:128>>,
+            case connect(ShuffledServerList, ProtocolVersion, Zxid, Timeout, SessionId, Password) of
+                {ok, State=#state{host=Host, port=Port, ping_interval=PingIntv}} ->
+                    NewState = State#state{auth_data=AuthData, chroot=Chroot,
+                                           reset_watch=ResetWatch, reconnect_expired=ReconnectExpired,
+                                           monitor=Monitor},
+                    add_init_auths(AuthData, NewState),
+                    notify_monitor_server_state(Monitor, connected, Host, Port),
+                    {ok, NewState, PingIntv};
+                {error, Reason} ->
+                    error_logger:error_msg("Connect failed: ~p, will try again after ~pms~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
+                    erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
+                    State = #state{servers=ShuffledServerList, auth_data=AuthData, chroot=Chroot,
+                                   proto_ver=ProtocolVersion, timeout=Timeout, session_id=SessionId, password=Password,
+                                   reset_watch=ResetWatch, reconnect_expired=ReconnectExpired, monitor=Monitor},
+                    {ok, State}
+            end;
         {error, Reason} ->
-            error_logger:error_msg("Connect failed: ~p, will try again after ~pms~n", [Reason, ?ZK_RECONNECT_INTERVAL]),
-            erlang:send_after(?ZK_RECONNECT_INTERVAL, self(), reconnect),
-            State = #state{servers=ShuffledServerList, auth_data=AuthData, chroot=Chroot,
-                           proto_ver=ProtocolVersion, timeout=Timeout, session_id=SessionId, password=Password,
-                           reset_watch=ResetWatch, reconnect_expired=ReconnectExpired, monitor=Monitor},
-            {ok, State}
+            {stop, Reason}
     end.
 
 handle_call(stop, _From, State) ->
@@ -354,17 +360,25 @@ resolve_servers(ServerList) ->
     resolve_servers(ServerList, []).
 
 resolve_servers([], ResolvedServerAcc) ->
-    lists:flatten(ResolvedServerAcc);
+    {ok, lists:flatten(ResolvedServerAcc)};
 resolve_servers([Server|Left], ResolvedServerAcc) ->
-    resolve_servers(Left, [resolve_server(Server) | ResolvedServerAcc]).
+    case resolve_server(Server) of
+        {ok, Servers} ->
+            resolve_servers(Left, [Servers | ResolvedServerAcc]);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 resolve_server({Host, Port}) ->
     case inet:gethostbyname(Host) of
         {ok, #hostent{h_addr_list=Addresses}} ->
-            [{Address, Port} || Address <- Addresses];
+            {ok, [{Address, Port} || Address <- Addresses]};
+        {error, nxdomain} ->
+            error_logger:error_msg("Resolving ~p:~p encountered an error: nxdomain~n", [Host, Port]),
+            {ok, []};
         {error, Reason} ->
             error_logger:error_msg("Resolving ~p:~p encountered an error: ~p~n", [Host, Port, Reason]),
-            []
+            {error, Reason}
     end.
 
 shuffle(L) ->
