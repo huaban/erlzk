@@ -421,7 +421,7 @@ connect([Server={Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastS
                             gen_tcp:close(Socket),
                             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
                     after ?ZK_CONNECT_TIMEOUT ->
-                        error_logger:error_msg("Connection to ~p:~p timeout while waiting for connect reply: ~p~n", [Host, Port]),
+                        error_logger:error_msg("Connection to ~p:~p timeout~n", [Host, Port]),
                         gen_tcp:close(Socket),
                         connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
                     end;
