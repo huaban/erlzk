@@ -3,7 +3,7 @@ defmodule Erlzk.MixFile do
 
   def project do
     [app: :erlzk,
-     version: "0.6.4",
+     version: "0.6.5",
      description: "A Pure Erlang ZooKeeper Client (no C dependency)",
      package: package]
   end
