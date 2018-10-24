@@ -237,7 +237,7 @@ erlzk:exists(Pid, "/a", spawn(fun() ->
 ```
 
 ```erlang
-Wather = spawn(fun() ->
+Watcher = spawn(fun() ->
     receive
         % receive a node deleted event
         {Event, Path} ->
