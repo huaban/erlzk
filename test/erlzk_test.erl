@@ -31,7 +31,9 @@ erlzk_test_() ->
 
 setup() ->
     erlzk:start(),
-    {ok, [ServerList, Timeout, Chroot, AuthData]} = file:consult("../test/erlzk.conf"),
+    Dir = code:priv_dir(erlzk),
+    ConfFile = filename:join([Dir, "erlzk.conf"]),
+    {ok, [ServerList, Timeout, Chroot, AuthData]} = file:consult(ConfFile),
     {ServerList, Timeout, Chroot, AuthData}.
 
 create({ServerList, Timeout, _Chroot, _AuthData}) ->
