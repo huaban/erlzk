@@ -12,22 +12,42 @@
                                          end).
 
 erlzk_test_() ->
-    {foreach,
-        fun setup/0,
-        [{with, [T]} || T <- [fun create/1,
-                              fun create_api/1,
-                              fun create_mode/1,
-                              fun delete/1,
-                              fun exists/1,
-                              fun get_data/1,
-                              fun set_data/1,
-                              fun get_acl/1,
-                              fun set_acl/1,
-                              fun get_children/1,
-                              fun multi/1,
-                              fun auth_data/1,
-                              fun chroot/1,
-                              fun watch/1]]}.
+    {setup,
+     fun setup_docker/0,
+     fun cleanup_docker/1,
+     {foreach,
+      fun setup/0,
+      [{with, [T]} || T <- [fun create/1,
+                            fun create_api/1,
+                            fun create_mode/1,
+                            fun delete/1,
+                            fun exists/1,
+                            fun get_data/1,
+                            fun set_data/1,
+                            fun get_acl/1,
+                            fun set_acl/1,
+                            fun get_children/1,
+                            fun multi/1,
+                            fun auth_data/1,
+                            fun chroot/1,
+                            fun watch/1]]}}.
+
+setup_docker() ->
+    Stacks = os:cmd("docker stack ls"),
+    case string:str(Stacks, ?MODULE_STRING) of
+        0 ->
+            %% Start the Docker stack
+            os:cmd("docker stack deploy -c ../test/erlzk.yaml " ?MODULE_STRING),
+            true;
+        _Exists ->
+            %% The Docker stack is already running, leave it intact
+            false
+    end.
+
+cleanup_docker(false) ->
+    ok;
+cleanup_docker(true) ->
+    os:cmd("docker stack rm " ?MODULE_STRING).
 
 setup() ->
     erlzk:start(),
