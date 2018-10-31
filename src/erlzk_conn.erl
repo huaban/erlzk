@@ -438,7 +438,7 @@ connect([Server={Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastS
             connect(Left, ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, [Server|FailedServerList])
     end.
 
-reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot, host=OldHost, port=OldPort,
+reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot,
                        proto_ver=ProtoVer, zxid=Zxid, timeout=Timeout, session_id=SessionId, password=Passwd,
                        xid=Xid, reset_watch=ResetWatch, reconnect_expired=ReconnectExpired,
                        monitor=Monitor, watchers=Watchers}) ->
@@ -448,10 +448,7 @@ reconnect(State=#state{servers=ServerList, auth_data=AuthData, chroot=Chroot, ho
             RenewState = NewState#state{auth_data=AuthData, chroot=Chroot, xid=Xid, zxid=Zxid,
                                         reset_watch=ResetWatch, reconnect_expired=ReconnectExpired,
                                         monitor=Monitor, heartbeat_watcher=HeartbeatWatcher, watchers=Watchers},
-            RenewState2 = case {Host, Port} of
-                {OldHost, OldPort} -> RenewState;
-                _ -> reset_watch_return_new_state(RenewState, Watchers)
-            end,
+            RenewState2 = reset_watch_return_new_state(RenewState, Watchers),
             notify_monitor_server_state(Monitor, connected, Host, Port),
             {noreply, RenewState2, PingIntv};
         {error, {session_expired, Host, Port}} ->

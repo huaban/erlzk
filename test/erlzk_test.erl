@@ -54,7 +54,9 @@ erlzk_test_() ->
                             fun multi/1,
                             fun auth_data/1,
                             fun chroot/1,
-                            fun watch/1]]}}.
+                            fun watch/1,
+                            fun reconnect_to_same/1,
+                            fun reconnect_to_different/1]]}}.
 
 setup_docker() ->
     Stacks = os:cmd("docker stack ls"),
@@ -480,6 +482,79 @@ watch({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertPending(AllWatch),
     ?assertCompleted(Receiver1),
     ?assertCompleted(Receiver2),
+
+    erlzk:close(Pid),
+    ok.
+
+reconnect_to_same({ServerList, Timeout, _Chroot, _AuthData}) ->
+    %% Ensure we will reconnect to the same ZK server by passing only
+    %% one server to the connection
+    {Host, Port} = hd(ServerList),
+    {ok, Addr} = inet:getaddr(Host, inet),
+    {ok, Pid} = connect_and_wait([{Host, Port}], Timeout),
+
+    ExistCreateWatch = ?spawn_watch({node_created, <<"/a">>}),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a", ExistCreateWatch)),
+    erlzk:kill_connection(Pid),
+
+    receive
+        DisconnectedMsg -> ?assertEqual({disconnected, Addr, Port}, DisconnectedMsg)
+    after
+        Timeout -> ?assert(false)
+    end,
+    receive
+        ReconnectedMsg -> ?assertEqual({connected, Addr, Port}, ReconnectedMsg)
+    after
+        Timeout -> ?assert(false)
+    end,
+
+    ?assertMatch({ok, "/a"}, erlzk:create(Pid, "/a")),
+    ?assertCompleted(ExistCreateWatch),
+    ?assertMatch(ok, erlzk:delete(Pid, "/a")),
+
+    erlzk:close(Pid),
+    ok.
+
+reconnect_to_different({ServerList, Timeout, _Chroot, _AuthData}) ->
+    %% Connect to ZK and make note of the ZK host selected by the
+    %% connection process
+    {ok, Pid} = erlzk:connect(ServerList, Timeout, [{monitor, self()}]),
+    {Host, Port} = receive
+                       {connected, H, P} -> {H, P}
+                   after
+                       Timeout ->  ?assert(false)
+                   end,
+
+    ExistCreateWatch = ?spawn_watch({node_created, <<"/a">>}),
+    ?assertMatch({error, no_node}, erlzk:exists(Pid, "/a", ExistCreateWatch)),
+
+    %% To ensure the connection will be established towards a
+    %% different ZK host, remove the current server from the state of
+    %% `Pid'
+    sys:replace_state(Pid,
+                      fun (State) ->
+                              OldServers = element(2, State),
+                              NewServers = lists:delete({Host, Port}, OldServers),
+                              setelement(2, State, NewServers)
+                      end,
+                      infinity),
+    erlzk:kill_connection(Pid),
+
+    receive
+        DisconnectedMsg -> ?assertEqual({disconnected, Host, Port}, DisconnectedMsg)
+    after
+        Timeout -> ?assert(false)
+    end,
+    receive
+        ReconnectedMsg -> ?assertMatch({connected, NewHost, NewPort} when NewHost =/= Host orelse NewPort =/= Port,
+                                       ReconnectedMsg)
+    after
+        Timeout -> ?assert(false)
+    end,
+
+    ?assertMatch({ok, "/a"}, erlzk:create(Pid, "/a")),
+    ?assertCompleted(ExistCreateWatch),
+    ?assertMatch(ok, erlzk:delete(Pid, "/a")),
 
     erlzk:close(Pid),
     ok.
