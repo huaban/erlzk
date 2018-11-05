@@ -22,7 +22,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([create/5, delete/3, exists/3, exists/4, get_data/3, get_data/4, set_data/4, get_acl/2, set_acl/4,
          get_children/3, get_children/4, sync/2, get_children2/3, get_children2/4,
-         multi/2, create2/5, add_auth/3, no_heartbeat/1, kill_session/1]).
+         multi/2, create2/5, add_auth/3, no_heartbeat/1,
+         kill_session/1, block_incoming_data/1, unblock_incoming_data/1]).
 
 -define(ZK_SOCKET_OPTS, [binary, {active, true}, {packet, 4}, {reuseaddr, true}, {linger, {false, 0}}]).
 -define(ZK_SOCKET_OPTS_CLOSE, [{linger, {true, 1}}]).
@@ -140,6 +141,12 @@ no_heartbeat(Pid) ->
 kill_session(Pid) ->
     gen_server:call(Pid, kill_session).
 
+block_incoming_data(Pid) ->
+    gen_server:cast(Pid, block_incoming_data).
+
+unblock_incoming_data(Pid) ->
+    gen_server:cast(Pid, unblock_incoming_data).
+
 %% ===================================================================
 %% gen_server Callbacks
 %% ===================================================================
@@ -255,6 +262,14 @@ handle_cast(no_heartbeat, State=#state{host=Host, port=Port, monitor=Monitor, so
     notify_monitor_server_state(Monitor, disconnected, Host, Port),
     State1 = notify_callers_closed(State),
     reconnect(State1);
+handle_cast(block_incoming_data, State=#state{socket=Socket, ping_interval=PingIntv}) ->
+    %% block incoming data by setting the socket to passive mode
+    inet:setopts(Socket, [{active, false}]),
+    {noreply, State, PingIntv};
+handle_cast(unblock_incoming_data, State=#state{socket=Socket, ping_interval=PingIntv}) ->
+    %% return the socket to active mode
+    inet:setopts(Socket, [{active, true}]),
+    {noreply, State, PingIntv};
 handle_cast(_Request, State=#state{ping_interval=PingIntv}) ->
     {noreply, State, PingIntv}.
 

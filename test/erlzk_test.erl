@@ -56,7 +56,8 @@ erlzk_test_() ->
                             fun chroot/1,
                             fun watch/1,
                             fun reconnect_to_same/1,
-                            fun reconnect_to_different/1]]}}.
+                            fun reconnect_to_different/1,
+                            fun reconnect_with_stale_watches/1]]}}.
 
 setup_docker() ->
     Stacks = os:cmd("docker stack ls"),
@@ -556,6 +557,52 @@ reconnect_to_different({ServerList, Timeout, _Chroot, _AuthData}) ->
     ?assertCompleted(ExistCreateWatch),
     ?assertMatch(ok, erlzk:delete(Pid, "/a")),
 
+    erlzk:close(Pid),
+    ok.
+
+reconnect_with_stale_watches({ServerList, Timeout, _Chroot, _AuthData}) ->
+    {ok, Pid} = connect_and_wait(ServerList, Timeout),
+
+    ?assertEqual({ok, "/a"}, erlzk:create(Pid, "/a")),
+    StaleDataWatch = ?spawn_watch({node_deleted, <<"/a">>}),
+    ?assertMatch({ok, {<<>>, _}}, erlzk:get_data(Pid, "/a", StaleDataWatch)),
+    StaleChildWatch = ?spawn_watch({node_deleted, <<"/a">>}),
+    ?assertMatch({ok, []}, erlzk:get_children(Pid, "/a", StaleChildWatch)),
+    StaleExistsWatch = ?spawn_watch({node_created, <<"/b">>}),
+    ?assertEqual({error, no_node}, erlzk:exists(Pid, "/b", StaleExistsWatch)),
+
+    ?assertEqual({ok, "/c"}, erlzk:create(Pid, "/c")),
+    ValidDataWatch = ?spawn_watch({node_data_changed, <<"/c">>}),
+    ?assertMatch({ok, {<<>>, _}}, erlzk:get_data(Pid, "/c", ValidDataWatch)),
+
+    {ok, P} = connect_and_wait(ServerList, Timeout),
+    erlzk:block_incoming_data(Pid),
+    ?assertEqual(ok, erlzk:delete(P, "/a")),
+    ?assertEqual({ok, "/b"}, erlzk:create(P, "/b")),
+    ?assertEqual(ok, erlzk:delete(P, "/b")),
+    ?assertMatch({ok, _}, erlzk:set_data(P, "/c", <<"changed">>)),
+
+    erlzk:kill_connection(Pid),
+    receive
+        {connected, _Host, _Port} -> ok
+    after
+        Timeout -> ?assert(false)
+    end,
+
+    ?assertCompleted(ValidDataWatch),
+    ?assertCompleted(StaleDataWatch),
+    ?assertCompleted(StaleChildWatch),
+
+    % This seems to be a ZooKeeper bug: the exists watch is not
+    % triggered, but it should. So let's trigger it with a new event
+    % until the bug gets fixed!
+    erlzk:create(Pid, "/b"),
+    ?assertCompleted(StaleExistsWatch),
+
+    erlzk:close(P),
+    erlzk:delete(Pid, "/a"),
+    erlzk:delete(Pid, "/b"),
+    erlzk:delete(Pid, "/c"),
     erlzk:close(Pid),
     ok.
 

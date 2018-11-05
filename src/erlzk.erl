@@ -18,7 +18,8 @@
 
 -include("erlzk.hrl").
 
--export([start/0, stop/0, connect/2, connect/3, connect/4, kill_connection/1, kill_session/1, close/1]).
+-export([start/0, stop/0, connect/2, connect/3, connect/4, close/1,
+         kill_connection/1, kill_session/1, block_incoming_data/1, unblock_incoming_data/1]).
 -export([create/2, create/3, create/4, create/5, delete/2, delete/3, exists/2, exists/3,
          get_data/2, get_data/3, set_data/3, set_data/4, get_acl/2, set_acl/3, set_acl/4,
          get_children/2, get_children/3, sync/2, get_children2/2, get_children2/3,
@@ -102,6 +103,18 @@ kill_connection(Pid) ->
 -spec kill_session(pid()) -> ok.
 kill_session(Pid) ->
     erlzk_conn:kill_session(Pid).
+
+%% @doc Block receiving data from ZooKeeper in the client.
+%%  (useful when testing network error behaviour).
+-spec block_incoming_data(pid()) -> ok.
+block_incoming_data(Pid) ->
+    erlzk_conn:block_incoming_data(Pid).
+
+%% @doc Unblock receiving data from ZooKeeper in the client.
+%%  (useful when testing network error behaviour).
+-spec unblock_incoming_data(pid()) -> ok.
+unblock_incoming_data(Pid) ->
+    erlzk_conn:block_incoming_data(Pid).
 
 %% @doc Disconnect to ZooKeeper.
 -spec close(pid()) -> ok.
