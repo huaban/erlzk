@@ -534,6 +534,9 @@ notify_callers_closed([]) ->
     ok;
 notify_callers_closed([{_Xid, {_Op, From}}|Left]) ->
     gen_server:reply(From, {error, closed}),
+    notify_callers_closed(Left);
+notify_callers_closed([{_Xid, {_Op, From, _Path, _Watcher}}|Left]) ->
+    gen_server:reply(From, {error, closed}),
     notify_callers_closed(Left).
 
 store_watcher(Op, Path, Watcher, Watchers) when not is_binary(Path)->
@@ -600,7 +603,13 @@ close_connection(Socket, false) ->
 stop_heartbeat(undefined) -> ok;
 stop_heartbeat({HeartbeatWatcher, HeartbeatRef}) ->
     erlang:demonitor(HeartbeatRef),
-    erlzk_heartbeat:stop(HeartbeatWatcher).
+    try erlzk_heartbeat:stop(HeartbeatWatcher) of
+        Result ->
+            Result
+    catch
+       exit:{noproc,_} ->
+           ok
+    end.
 
 get_reply_from_body(ok, _Op, <<>>, _Chroot) -> ok;
 get_reply_from_body(ok, Op, Body, Chroot) ->
