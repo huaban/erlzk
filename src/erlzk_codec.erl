@@ -378,7 +378,7 @@ unpack_acl(Acl, Packet, Size) ->
     unpack_acl([{Perms,Scheme,Id}|Acl], Left1, Size - 1).
 
 unpack_perms(PermsValue) ->
-    unpack_perms(PermsValue, [?ZK_PERM_READ,"r",?ZK_PERM_WRITE,"w",?ZK_PERM_CREATE,"c",?ZK_PERM_DELETE,"d",?ZK_PERM_ADMIN,"r"], "").
+    unpack_perms(PermsValue, [?ZK_PERM_READ,"r",?ZK_PERM_WRITE,"w",?ZK_PERM_CREATE,"c",?ZK_PERM_DELETE,"d",?ZK_PERM_ADMIN,"a"], "").
 
 unpack_perms(_PermsValue, [], Perms) ->
     list_to_atom(Perms);
