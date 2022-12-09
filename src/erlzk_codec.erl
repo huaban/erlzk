@@ -78,8 +78,8 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
-pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, SessionId, Password}) ->
-    <<ProtocolVersion:32, LastZxidSeen:64, Timeout:32, SessionId:64, (pack_bytes(Password))/binary>>.
+pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, SessionId, Password, CanBeReadOnly}) ->
+    <<ProtocolVersion:32, LastZxidSeen:64, Timeout:32, SessionId:64, (pack_bytes(Password))/binary, (pack_bool(CanBeReadOnly))/binary>>.
 
 pack(add_auth, {Scheme, Auth}, Xid) ->
     Packet = <<0:32, (pack_str(Scheme))/binary, (pack_bytes(Auth))/binary>>,
@@ -159,8 +159,13 @@ unpack(Packet) ->
 
 unpack(connect, Packet) ->
     <<ProtocolVersion:32, TimeOut:32, SessionId:64, Left/binary>> = Packet,
-    {Password, _}= unpack_bytes(Left),
-    {ProtocolVersion, TimeOut, SessionId, Password}.
+    case unpack_bytes(Left) of
+        {Password, <<>>} ->
+            {ProtocolVersion, TimeOut, SessionId, Password, false};
+        {Password, Left2} ->
+            {ReadOnly, _} = unpack_bool(Left2),
+            {ProtocolVersion, TimeOut, SessionId, Password, ReadOnly}
+    end.
 
 unpack(create, Packet, Chroot) ->
     {Path, _} = unpack_str(Packet),
@@ -248,6 +253,11 @@ pack_bytes(Bytes) ->
     if Length =:= 0 -> <<-1:32/signed>>;
        Length >   0 -> <<Length:32, Bytes/binary>>
     end.
+
+pack_bool(true) ->
+    <<1:8>>;
+pack_bool(false) ->
+    <<0:8>>.
 
 pack_acl(Acl) ->
     pack_acl(Acl, <<>>, 0).
@@ -363,6 +373,10 @@ unpack_bytes(Packet) ->
        Length >  0  ->
         split_binary(Left, Length)
     end.
+
+unpack_bool(Packet) ->
+    <<Bool:8, Left/binary>> = Packet,
+    {Bool =/= 0, Left}.
 
 unpack_acl(Packet) ->
     <<Size:32, Left/binary>> = Packet,
