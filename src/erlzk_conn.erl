@@ -398,11 +398,11 @@ connect([Server={Host,Port}|Left], ProtocolVersion, LastZxidSeen, Timeout, LastS
     case gen_tcp:connect(Host, Port, ?ZK_SOCKET_OPTS, ?ZK_CONNECT_TIMEOUT) of
         {ok, Socket} ->
             error_logger:info_msg("Connected ~p:~p, sending connect command~n", [Host, Port]),
-            case gen_tcp:send(Socket, erlzk_codec:pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword})) of
+            case gen_tcp:send(Socket, erlzk_codec:pack(connect, {ProtocolVersion, LastZxidSeen, Timeout, LastSessionId, LastPassword, false})) of
                 ok ->
                     receive
                         {tcp, Socket, Packet} ->
-                            {ProtoVer, RealTimeOut, SessionId, Password} = erlzk_codec:unpack(connect, Packet),
+                            {ProtoVer, RealTimeOut, SessionId, Password, false} = erlzk_codec:unpack(connect, Packet),
                             case SessionId of
                                 0 ->
                                     error_logger:warning_msg("Session expired, connection to ~p:~p will be closed~n", [Host, Port]),
